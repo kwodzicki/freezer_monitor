@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+
+from freezer_monitor.freezer_monitor import FreezerMonitor
+
+if __name__ == "__main__":
+
+    inst = FreezerMonitor( )
+    inst.main()
