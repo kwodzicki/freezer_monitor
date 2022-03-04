@@ -1,0 +1,8 @@
+send_from:                                                                    
+  server : smtp.gmail.com   # Gmail smtp server address; change to match service you are using
+  port   : 465              # SSL port                                        
+  user   : user_name        # User name for logging into the send_from account
+  pass   : app_password     # Password for logging in; should be app password if using Google
+send_to:                                                                      
+  - email@gmail.com # First email address to send information to         
+  -                         # Second email addres to send inforamtion to, etc.

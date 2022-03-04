@@ -1,10 +1,17 @@
 import os
 import matplotlib.pyplot as plt
 
-from .parselog import parselog
+from . import FIGDIR
+from .parsers import parsedata
 
-def plotDay():
-    date, temp, rh = parselog()
+def plotDay( dataFile, plotFile = None ):
+    if plotFile is None:
+      plotFile = os.path.basename( dataFile )
+      plotFile = os.path.join( FIGDIR, plotFile + '.png' ) 
+
+    os.makedirs( os.path.dirname( plotFile ), exist_ok = True )
+
+    date, temp, rh = parsedata( dataFile )
 
     fig, ax1 = plt.subplots()
     color    = 'black'
@@ -18,5 +25,5 @@ def plotDay():
     ax2.tick_params(axis='y', labelcolor=color)
 
     fig.suptitle( date[0].strftime( '%Y-%m-%d' ) )
-    fig.savefig( os.path.join(os.path.expanduser('~'), 'plot.png' ) )
+    fig.savefig( plotFile )
 

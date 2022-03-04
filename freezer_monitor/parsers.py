@@ -2,17 +2,17 @@
 import os
 from datetime import datetime
 
-from . import LOGDIR
+from . import DATADIR
 
-FMT = '%Y-%m-%d %H:%M:%S,%f'
+FMT = '%Y-%m-%d %H:%M:%S.%f'
 
-def parselog( file = None ):
-    if file is None:
-        file = os.path.join( LOGDIR, 'freezer_monitor.log' )
+def parsedata( fpath = None ):
+    if fpath is None:
+        fpath = os.path.join( DATADIR, 'freezer_monitor.log' )
     date, temp, rh = [], [], []
-    with open(file, 'r') as fid:
+    with open(fpath, 'r') as fid:
         for line in fid.readlines():
-            tmp = line.rstrip().split('\t')
+            tmp = line.rstrip().split(',')
             date.append( datetime.strptime(tmp[0], FMT) )
             temp.append( float(tmp[1]) )
             rh.append(   float(tmp[2]) )
