@@ -8,154 +8,38 @@
 # not support PIL/pillow (python imaging library)!
 import logging
 
-
+import os
 import signal
 import time
 from datetime import datetime
 
 from subprocess import check_output
-from threading import Thread, Event, Lock
+from threading import Thread
 
-from PIL import Image, ImageDraw, ImageFont
-from gpiozero import Button
+import numpy
 
-import busio
-from board import SCL, SDA
-import adafruit_ssd1306
 import adafruit_sht31d
 
-def c2f( temp ):
-
-    return temp * 9.0 / 5.0 + 32.0
+from . import DATADIR, DEFAULT_INTERVAL, STOP_EVENT, I2C_LOCK, I2C
+from .timerotatingcsv import DailyRotatingCSV
+from .display import SSD1306
 
 class FreezerMonitor( Thread ):
 
-  _KILL = Event()
-  IP = ['hostname', '-I']
-
-  def __init__(self, interval = 1.0):
+  def __init__(self, interval = DEFAULT_INTERVAL, **kwargs):
     super().__init__()
-
-    self._interval = interval
-
-    self._lock      = Lock()
-
-    self._displayOn = False
-    self._timeout   = 30.0
-    self.lastOn     = -self._timeout
-
-    self._button    = Button( 17 )
-
-    # Create the I2C interface.
-    self._i2c = busio.I2C(SCL, SDA)
-
-#   Create the SSD1306 OLED class.
-#   The first two parameters are the pixel width and pixel height.  Change these
-#   to the right size for your display!
-    self._display = adafruit_ssd1306.SSD1306_I2C(128, 32, self._i2c)
-    self._sensor  = adafruit_sht31d.SHT31D( self._i2c )
-
-    # Create blank image for drawing.
-    # Make sure to create image with mode '1' for 1-bit color.
-    self.width  = self._display.width
-    self.height = self._display.height
-    self.image  = Image.new("1", (self.width, self.height))
-    self.draw   = ImageDraw.Draw( self.image )
-    self.fontIP = ImageFont.truetype('DejaVuSansMono', size =  8)
-    self.font   = ImageFont.truetype('DejaVuSansMono', size = 12)
 
     self.log    = logging.getLogger(__name__)
     self.log.setLevel( logging.DEBUG )
 
-    self.t0         = 0.0
-    self.start()
+    self._display    = SSD1306()
+    self._interval   = interval
 
-  @property
-  def lastOn(self):
-    with self._lock:
-      return self._lastOn
-  @lastOn.setter
-  def lastOn(self, val):
-    with self._lock:
-      self._lastOn = val 
+    self._sensor     = adafruit_sht31d.SHT31D( I2C )
+    self.data        = DailyRotatingCSV( os.path.join(DATADIR, 'freezer_stats.csv') ) 
+    self.t_30min_avg = numpy.full( int(30*60/interval), numpy.nan, dtype=numpy.float32 )
 
-  def clearDisplay(self):
-
-    # Clear display.
-    self._display.fill(0)
-    self._display.show()
-    self._displayOn = False
-
-  def getIP(self):
-
-    ip = check_output( self.IP ).decode("utf-8")
-    ip = ip.split(' ')[0]
-    return f'IP : {ip}'
-
-  def getT(self):
-
-    return self._sensor.temperature
-
-  def getRH(self):
-
-    return self._sensor.relative_humidity
-
-  def update(self):
-    self.t0 = time.monotonic()
-
-    temp = self.getT()
-    rh   = self.getRH()
-
-    self.log.info( f"{temp:6.1f}\t{rh:6.1f}" )
-    if (self.t0-self.lastOn) > self._timeout:
-      if self._displayOn:
-        self.clearDisplay()
-    else:
-      self.updateDisplay( temp, rh )
-
-  def updateDisplay(self, temp, rh):
-
-    if not self._displayOn:
-      self.lastOn = time.monotonic()
-
-    # Draw a black filled box to clear the image.
-    self.draw.rectangle((0, 0, self.width, self.height), outline=0, fill=0)
-    
-    # Draw some shapes.
-    # First define some constants to allow easy resizing of shapes.
-    padding = -2
-    top = padding
-    bottom = self.height - padding
-    # Move left to right keeping track of the current x position for drawing shapes.
-    x = 0
-    
-
-    # Write four lines of text.
-    tempF = c2f( temp )
-    temp  = f"T  : {temp:6.1f} C / {tempF:6.1F} F"
-    rh    = f"RH : {rh:6.1f}%"
-
-    self.draw.text((x, top), self.getIP(), font=self.fontIP, fill=255)
-    top += self.fontIP.size
-    self.draw.text((x, top), temp, font=self.font, fill=255)
-    top += self.font.size
-    self.draw.text((x, top), rh, font=self.font, fill=255)
-
-    # Display image.
-    self._display.image( self.image )
-    self._display.show()
-    self._displayOn = True 
-    # Load default font.
-    
-    # Alternatively load a TTF font.  Make sure the .ttf font file is in the
-    # same directory as the python script!
-    # Some other nice fonts to try: http://www.dafont.com/bitmap.php
-    # font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 9)
-
-  def run(self):
-    while not self._KILL.is_set():
-      if self._button.wait_for_press(timeout=1.0):
-        self.lastOn = time.monotonic()
+    self.t0          = 0.0
 
   def delay(self):
 
@@ -164,23 +48,44 @@ class FreezerMonitor( Thread ):
       return 0.0
     return dt
 
-  def main(self):
+  def poll(self):
+    """Poll the sensor for temperature and humidity"""
 
-    self.update() 
-    while not self._KILL.wait( self.delay() ):
-      self.update() 
-    self.clearDisplay()
+    t = rh = float('nan')
+    with I2C_LOCK:
+      try:
+        t = self._sensor.temperature
+      except Exception as err:
+        self.log.error( f'Failed to get temperature from sensor : {err}' )
 
-def kill( *args, **kwargs ):
+      try:
+        rh = self._sensor.relative_humidity
+      except:
+        self.log.error( f'Failed to get relative humidity from sensor : {err}' )
 
-  FreezerMonitor._KILL.set()
+    return t, rh
 
-#signal.signal( signal.SIGKILL, kill )
-signal.signal( signal.SIGINT,  kill )
-signal.signal( signal.SIGTERM, kill )
+  def start(self):
 
+    self._display.start()
+    super().start()
 
-if __name__ == "__main__":
+  def run(self):
 
-    inst = FreezerMonitor( )
-    inst.main()
+    while not STOP_EVENT.wait( self.delay() ):                                  # Wait for event, delay is computed in function and we want event to be NOT set
+      temp, rh = self.poll()                                                    # Get temperature and humidity
+      self.data.write( f"{temp:6.1f}", f"{rh:6.1f}" )                           # Write data to the csv file
+
+      self.t_30min_avg     = numpy.roll( self.t_30min_avg, -1 )                 # Shift data in rolling averge for new value
+      self.t_30min_avg[-1] = temp                                               # Add new temperature to rolling average array 
+
+      self._display.temperature       = temp                                    # Update the temperature on display
+      self._display.relative_humidity = rh                                      # Update rh on display
+
+      self.t0 = time.monotonic()                                                # Get current monotonic time; used to compute delay until next poll
+
+    self.data.close()                                                           # Close data file
+    self.data.join()                                                            # Join data file thread
+
+    self._display.join()                                                        # Join display thread
+    self.log.debug( 'Monitor thread dead!' )

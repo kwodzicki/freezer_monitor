@@ -1,8 +1,27 @@
 #!/usr/bin/env python3
 
-from freezer_monitor.freezer_monitor import FreezerMonitor
+import argparse
+import signal
+from freezer_monitor import STOP_EVENT
+from freezer_monitor.freezer_monitor import DEFAULT_INTERVAL, FreezerMonitor
+
+def kill( *args, **kwargs ):
+  print('setting STOP_EVENT' )
+  STOP_EVENT.set()
+
 
 if __name__ == "__main__":
 
-    inst = FreezerMonitor( )
-    inst.main()
+    parser = argparse.ArgumentParser(description='Monitor freezer temperature',
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('--interval', type=float, default=5.0, help='Temperature update interval in seconds')
+    parser.add_argument('--show-ip', action='store_true', help='If set, IP address will be displayed on OLED screen')
+
+    args = parser.parse_args()
+
+    signal.signal( signal.SIGINT,  kill )
+    signal.signal( signal.SIGTERM, kill )
+
+    inst = FreezerMonitor( interval = args.interval, showIP = args.show_ip )
+    inst.start()
+    inst.join()

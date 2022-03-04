@@ -1,16 +1,29 @@
 import logging
-from logging.handlers import  TimedRotatingFileHandler
+from logging.handlers import  RotatingFileHandler
 
 import os
+from threading import Event, Lock
 
-LOGDIR = os.path.join( os.path.expanduser('~'), 'logs' ) 
-lfile  = os.path.join( LOGDIR, 'freezer_monitor.log' )
+import busio
+from board import SCL, SDA
+
+HOME    = os.path.expanduser('~')
+APPDIR  = os.path.join( HOME, 'Freezer_Monitor')
+DATADIR = os.path.join( APPDIR, 'data' ) 
+LOGDIR  = os.path.join( APPDIR, 'logs' ) 
+lfile   = os.path.join( LOGDIR, 'freezer_monitor.log' )
 os.makedirs( LOGDIR, exist_ok=True )
 
-lfile = TimedRotatingFileHandler(lfile, when='D', interval=1, backupCount=30)
-lfile.setFormatter( logging.Formatter( '%(asctime)s\t%(message)s' ) )
+lfile = RotatingFileHandler(lfile, maxBytes=2**20, backupCount=5)
+lfile.setFormatter( logging.Formatter( '%(asctime)s [%(levelname)s] %(message)s' ) )
 lfile.setLevel( logging.DEBUG )
 
 LOG    = logging.getLogger(__name__)
 LOG.setLevel( logging.DEBUG )
 LOG.addHandler(lfile)
+
+DEFAULT_INTERVAL = 5.0
+STOP_EVENT       = Event()
+I2C_LOCK         = Lock()
+
+I2C              = busio.I2C( SCL, SDA )

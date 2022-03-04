@@ -1,0 +1,14 @@
+[Unit]
+Description=Freezer Monitor daemon
+After=basic.target
+
+[Service]
+User=pi
+Group=pi
+ExecStart=/home/pi/.local/bin/freezerMonitor
+Restart=always
+RestartSec=10s
+StartLimitInterval=0
+
+[Install]
+WantedBy=default.target
