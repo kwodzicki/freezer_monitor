@@ -82,7 +82,7 @@ class FreezerMonitor( EMailer, Thread ):
 
       try:
         rh = self._sensor.relative_humidity
-      except:
+      except Exception as err:
         self.__log.error( f'Failed to get relative humidity from sensor : {err}' )
 
     return t, rh
