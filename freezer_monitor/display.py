@@ -160,6 +160,5 @@ class SSD1306( Thread ):
         self.clear()                                                            # clear the screen
         needsClear = False                                                      # Set needsClear to False
 
-
     self.clear()                                                                # Ensure display is cleared
     self.log.debug( 'Display thread dead!' )
