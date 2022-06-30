@@ -2,26 +2,29 @@
 
 import argparse
 import signal
-from freezer_monitor import STOP_EVENT
+from freezer_monitor import STOP_EVENT, lfile
 from freezer_monitor.freezer_monitor import DEFAULT_INTERVAL, FreezerMonitor
 
 def kill( *args, **kwargs ):
-  print('setting STOP_EVENT' )
+  print( "setting STOP_EVENT" )
   STOP_EVENT.set()
 
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser(description='Monitor freezer temperature',
+    parser = argparse.ArgumentParser(description="Monitor freezer temperature",
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--interval', type=float, default=5.0, help='Temperature update interval in seconds')
-    parser.add_argument('--show-ip', action='store_true', help='If set, IP address will be displayed on OLED screen')
+    parser.add_argument("--interval",  type=float, default=5.0, help="Temperature update interval in seconds")
+    parser.add_argument("--loglevel", type=int,   default=30, help="Set logging level")
+    parser.add_argument("--show-ip",   action="store_true", help="If set, IP address will be displayed on OLED screen")
+    parser.add_argument("--no-socket", action="store_true", help="If set, disable sending data to server on socket")
 
     args = parser.parse_args()
 
     signal.signal( signal.SIGINT,  kill )
     signal.signal( signal.SIGTERM, kill )
 
-    inst = FreezerMonitor( interval = args.interval, showIP = args.show_ip )
+    lfile.setLevel( args.loglevel )
+    inst = FreezerMonitor( interval = args.interval, showIP = args.show_ip, no_socket = args.no_socket)
     inst.start()
     inst.join()

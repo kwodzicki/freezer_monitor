@@ -28,7 +28,16 @@ from .emailer import EMailer
 
 class FreezerMonitor( EMailer, Thread ):
 
-  def __init__(self, thres = -10, interval = DEFAULT_INTERVAL, **kwargs):
+  def __init__(self, thres = -10, interval = DEFAULT_INTERVAL, no_socket=False, **kwargs):
+    """
+    Keyword arguments:
+      thres (int,float) : Temperature threshold (degree C) to trigger warning;
+        if temperature exceeds this value, warning sent
+      interval (int, float) : Polling interval for sensor (seconds)
+      no_socket (bool) : If set, will disable sending data to server socket
+
+    """
+
     super().__init__()
 
     self.__log = logging.getLogger(__name__)
@@ -40,8 +49,8 @@ class FreezerMonitor( EMailer, Thread ):
     self._interval   = interval
     self.thres       = thres
     self._sensor     = adafruit_sht31d.SHT31D( I2C )
-    self.data        = DailyRotatingCSV( os.path.join(DATADIR, 'freezer_stats.csv') ) 
-    self.webSocket   = WebSocket( **kwargs )																	# Initialize web socket to send data to website front-end
+    self.data        = DailyRotatingCSV( os.path.join(DATADIR, "freezer_stats.csv") ) 
+    self.webSocket   = None if no_socket else WebSocket( **kwargs )																	# Initialize web socket to send data to website front-end
     self.t_30min_avg = numpy.full( int(30*60/interval), numpy.nan, dtype=numpy.float32 )
 
   def delay(self, t0):
@@ -67,7 +76,7 @@ class FreezerMonitor( EMailer, Thread ):
       except Exception as err:																								# On exception, log the a warning
         self.__log.warning( f"Failed to toggle heater : {err}" )
       else:																																		# Else, some debug logging
-        self.__log.debug( f'Heater state set to : {state}' )
+        self.__log.debug( f"Heater state set to : {state}" )
 
   def runHeater(self, duration = 10.0):
     """
@@ -121,7 +130,8 @@ class FreezerMonitor( EMailer, Thread ):
       t0       = time.monotonic()                                             # Get current monotonic time; used to compute delay until next poll
       temp, rh = self.poll()                                                  # Get temperature and humidity
       self.data.write( f"{temp:6.1f}", f"{rh:6.1f}" )                         # Write data to the csv file
-      self.webSocket.write( temp = temp, rh = rh )														# Write the data to the websocket
+      if self.webSocket is not None:
+        self.webSocket.write( temp = temp, rh = rh )						  # Write the data to the websocket
 
       self.t_30min_avg     = numpy.roll( self.t_30min_avg, -1 )               # Shift data in rolling averge for new value
       self.t_30min_avg[-1] = temp                                             # Add new temperature to rolling average array 
@@ -143,4 +153,4 @@ class FreezerMonitor( EMailer, Thread ):
     self.data.join()                                                          # Join data file thread
 
     self._display.join()                                                      # Join display thread
-    self.__log.debug( 'Monitor thread dead!' )
+    self.__log.debug( "Monitor thread dead!" )

@@ -12,7 +12,7 @@ except:
 
 class WebSocket( Thread ):
 
-  def __init__(self, host='192.168.200.150', port = 20486, **kwargs):
+  def __init__(self, host="192.168.200.150", port = 20486, **kwargs):
 
     super().__init__()
     self.host       = host
@@ -23,7 +23,7 @@ class WebSocket( Thread ):
     self._connected = False
     self._lock      = Lock()
     self._length    = 4
-    self._byteorder = 'little'
+    self._byteorder = "little"
 
     self.start()
 
@@ -37,7 +37,7 @@ class WebSocket( Thread ):
       try:								    # Try to connect
         self._socket.connect( (self.host, self.port) )
       except Exception as err:						    # Exception on connect
-        self._log.debug( f'Failed to connect to web socket {err}' )
+        self._log.debug( f"Failed to connect to web socket {err}" )
         self._connected = False
       else:								    # Else, set connected to true
         self._connected = True
@@ -51,7 +51,7 @@ class WebSocket( Thread ):
 
     self._socket.close()																												# Close the socket
 
-    self._log.debug( 'Thread dead' )
+    self._log.debug( "Thread dead" )
 
   def write( self, **kwargs ):
     """
@@ -66,10 +66,10 @@ class WebSocket( Thread ):
 
     with self._lock:																													# Grab lock for thread safety
       if not self._connected:
-        self._log.debug( 'Not connected, cannot send data' )
+        self._log.debug( "Not connected, cannot send data" )
         return
 
-      kwargs['timestamp'] = datetime.now().isoformat()																			# Add timestamp to keywords with current time of record
+      kwargs["timestamp"] = datetime.now().isoformat()																			# Add timestamp to keywords with current time of record
       for key, val in kwargs.items():
         if not isinstance(val, (list, tuple)):
           kwargs[key] = [val]
@@ -78,7 +78,7 @@ class WebSocket( Thread ):
       try:
         self._socket.sendall( dataLen + data )																# Send the data
       except Exception as err:
-        self._log.error( f'Faild to send data to socket : {err}' )
+        self._log.error( f"Faild to send data to socket : {err}" )
         self._connected = False
 
 # echo-server.py

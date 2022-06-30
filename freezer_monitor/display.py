@@ -44,8 +44,8 @@ class SSD1306( Thread ):
   def __init__(self, timeout = 30.0, showIP = False):
     super().__init__()
 
-    self.log    = logging.getLogger(__name__)
-    self.log.setLevel( logging.DEBUG )
+    self.__log    = logging.getLogger(__name__)
+    self.__log.setLevel( logging.DEBUG )
 
     self._showIP            = showIP
     self._displayOn         = Event()
@@ -109,6 +109,8 @@ class SSD1306( Thread ):
   def update(self):
     """Update information in the image that is drawn on screen"""
 
+    self.__log.debug( "Updating the display" )
+
     coord = [0, self.padding]                                                   # Upper-left corner to start drawing
     temp  = f"T  : {self.temperature:6.1f} C"                                   # Temperature string
     rh    = f"RH : {self.relative_humidity:6.1f} %"                             # RH string
@@ -131,12 +133,12 @@ class SSD1306( Thread ):
         self._display.image( self._image )                                      # Write image data to screen
         self._display.show()                                                    # Refresh the screen
       except Exception as err:
-        self.log.error( f'Failed to update display : {err}' )
+        self.__log.error( f'Failed to update display : {err}' )
 
   def clear(self):
     """Clear the display; turn off all pixels"""
 
-    self.log.debug('Clearing display')
+    self.__log.debug('Clearing display')
     self._draw.rectangle((0, 0, self.width, self.height), outline=0, fill=0)    # Draw rectangle to clear image
     self.draw()                                                                 # Update image on the display
 
@@ -161,4 +163,4 @@ class SSD1306( Thread ):
         needsClear = False                                                      # Set needsClear to False
 
     self.clear()                                                                # Ensure display is cleared
-    self.log.debug( 'Display thread dead!' )
+    self.__log.debug( 'Display thread dead!' )

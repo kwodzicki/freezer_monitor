@@ -3,24 +3,34 @@ import logging
 import time
 import smtplib
 from email.message import EmailMessage
-from threading import Thread
+from threading import Thread, Lock
 
 import yaml
 
 from . import SETTINGS_FILE
 
 RESEND = 30 * 60.0          # Time before another email will be sent
+TLOCK  = Lock()
+
+def locked( fn ):
+  """To use as decorator to make function thread safe"""
+
+  def lockedWrap(*args, **kwargs):
+    with TLOCK:
+      return fn( *args, **kwargs )
+
+  return lockedWrap
 
 # Threaded function snippet
 def threaded(fn):
   """To use as decorator to make a function call threaded."""
 
-  def wrapper(*args, **kwargs):
+  def threadedWrap(*args, **kwargs):
     thread = Thread(target=fn, args=args, kwargs=kwargs)
     thread.start()
     return thread
 
-  return wrapper
+  return threadedWrap
 
 ############################################################################### 
 class EMailer( object ):                                          
@@ -29,8 +39,8 @@ class EMailer( object ):
     super().__init__()
     self.__log = logging.getLogger(__name__)
 
-    self.__overTemp  = 0.0
-    self.__allNaN    = 0.0
+    self.__overTemp  = -RESEND 
+    self.__allNaN    = -RESEND
 
     with open(SETTINGS_FILE, 'r') as fid:
       settings = yaml.load( fid, Loader = yaml.SafeLoader )
@@ -51,6 +61,7 @@ class EMailer( object ):
     return (self.send_to is not None) and (self.send_from is not None)
 
   @threaded
+  @locked
   def allNaN( self ):
     """Send email for all NaN slice encountered!"""
 
@@ -68,6 +79,7 @@ class EMailer( object ):
     self.__allNaN = time.monotonic()
 
   @threaded
+  @locked
   def overTemp(self, temp, rh):
     """Send email for over temperature threshold!"""
 
@@ -92,6 +104,7 @@ class EMailer( object ):
 
   def sendMail( self, subject, content ):
 
+    self.__log.debug( "Sending email" )
     msg = EmailMessage()
     msg['From']    = self.send_from['user'] 
     msg['To']      = self.send_to

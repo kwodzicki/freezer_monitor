@@ -19,7 +19,7 @@ SETTINGS_FILE = os.path.join( HOME, f'{__name__}_email.yml' )
 
 lfile = RotatingFileHandler(lfile, maxBytes=2**20, backupCount=5)
 lfile.setFormatter( logging.Formatter( '%(asctime)s [%(levelname)s] %(message)s' ) )
-lfile.setLevel( logging.DEBUG )
+lfile.setLevel( logging.WARNING )
 
 LOG    = logging.getLogger(__name__)
 LOG.setLevel( logging.DEBUG )
