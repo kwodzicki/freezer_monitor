@@ -28,11 +28,15 @@ from .emailer import EMailer
 
 class FreezerMonitor( EMailer, Thread ):
 
-  def __init__(self, thres = -10, interval = DEFAULT_INTERVAL, no_socket=False, **kwargs):
+  def __init__(self, maxThres=-10, minThres=None, interval = DEFAULT_INTERVAL, no_socket=False, **kwargs):
     """
     Keyword arguments:
-      thres (int,float) : Temperature threshold (degree C) to trigger warning;
-        if temperature exceeds this value, warning sent
+      maxThres (int,float) : Temperature threshold (degree C) to trigger warning;
+        if temperature exceeds this value, warning sent. Setting this will override
+        the minThres keyword
+      minThres (int,float) : Temperature threshold (degree C) to trigger warning;
+        if temperature is below this value, warning sent. This keyword is ignored
+        if the maxThres keyword is set. 
       interval (int, float) : Polling interval for sensor (seconds)
       no_socket (bool) : If set, will disable sending data to server socket
 
@@ -47,7 +51,8 @@ class FreezerMonitor( EMailer, Thread ):
 
     self._display    = SSD1306()
     self._interval   = interval
-    self.thres       = thres
+    self.minThres    = minThres
+    self.maxThres    = maxThres
     self._sensor     = adafruit_sht31d.SHT31D( I2C )
     self.data        = DailyRotatingCSV( os.path.join(DATADIR, "freezer_stats.csv") ) 
     self.webSocket   = None if no_socket else WebSocket( **kwargs )																	# Initialize web socket to send data to website front-end
@@ -99,17 +104,17 @@ class FreezerMonitor( EMailer, Thread ):
   def poll(self):
     """Poll the sensor for temperature and humidity"""
 
-    t = rh = float('nan')																											# Set temperature and RH to NaN to start
+    t = rh = float("nan")																											# Set temperature and RH to NaN to start
     with I2C_LOCK:																														# Get I2C lock for thread safety
       try:																																		# Try to get information from temperature sensor
         t = self._sensor.temperature
       except Exception as err:
-        self.__log.error( f'Failed to get temperature from sensor : {err}' )
+        self.__log.error( f"Failed to get temperature from sensor : {err}" )
 
       try:																																		# Try to get information from RH sensor
         rh = self._sensor.relative_humidity
       except Exception as err:
-        self.__log.error( f'Failed to get relative humidity from sensor : {err}' )
+        self.__log.error( f"Failed to get relative humidity from sensor : {err}" )
 
     return t, rh																															# Return the temperature and RH
 
@@ -139,8 +144,10 @@ class FreezerMonitor( EMailer, Thread ):
       avg = numpy.nanmean( self.t_30min_avg )                                 # Compute average temperature
       if not numpy.isfinite(avg):                                             # If is not finite
         self.allNaN()                                                         # AllNaN email
-      elif avg > self.thres:                                                  # If greater than threshold
+      elif isinstance(self.maxThres, (int,float)) and (avg > self.maxThres):
         self.overTemp(temp, rh)                                               # Over temp email
+      elif isinstance(self.minThres, (int,float)) and (avg < self.minThres):
+        self.underTemp(temp, rh)                                              # Under temp email
 
       self._display.temperature       = temp                                  # Update the temperature on display
       self._display.relative_humidity = rh                                    # Update rh on display

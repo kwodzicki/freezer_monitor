@@ -22,8 +22,8 @@ class DailyRotatingCSV( Thread ):
     
     if self._fid: self._fid.close()                                             # if file open, close it
 
-    fpath = f'{self.csv}.{self._date:%Y-%m-%d}'
-    self._fid = open( fpath, mode='a', buffering=1 )
+    fpath = f"{self.csv}.{self._date:%Y-%m-%d}"
+    self._fid = open( fpath, mode="a", buffering=1 )
     try:
       os.remove( self.csv )
     except:
@@ -36,7 +36,7 @@ class DailyRotatingCSV( Thread ):
     for item in os.listdir( fdir ):
       if fname in item:
         try:
-          date = datetime.strptime( item.split('.')[-1], '%Y-%m-%d' )
+          date = datetime.strptime( item.split(".")[-1], "%Y-%m-%d" )
         except:
           continue
         if (self._date - date).days > self._backup:
@@ -52,8 +52,8 @@ class DailyRotatingCSV( Thread ):
   def _writeData(self, date, *args):
 
     self._rotateFile()
-    self._fid.write( date.strftime('%Y-%m-%d %H:%M:%S.%f,') )
-    self._fid.write( ','.join( [str(i).strip() for i in args] ) )
+    self._fid.write( date.strftime("%Y-%m-%d %H:%M:%S.%f,") )
+    self._fid.write( ",".join( [str(i).strip() for i in args] ) )
     self._fid.write( os.linesep ) 
 
   def write(self, *args ):

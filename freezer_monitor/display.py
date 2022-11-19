@@ -37,8 +37,8 @@ class DisplayButton( Thread ):
 
 class SSD1306( Thread ):
 
-  IP         = ['hostname', '-I']
-  FONT       = 'DejaVuSansMono'
+  IP         = ["hostname", "-I"]
+  FONT       = "DejaVuSansMono"
   BRIGHTNESS = 200
 
   def __init__(self, timeout = 30.0, showIP = False):
@@ -54,8 +54,8 @@ class SSD1306( Thread ):
 
     self.buttonThread       = DisplayButton( self._displayOn, timeout ) 
 
-    self._temperature       = float('nan')
-    self._relative_humidity = float('nan')
+    self._temperature       = float("nan")
+    self._relative_humidity = float("nan")
 
     self._displayThread     = None
     # Create the SSD1306 OLED class.
@@ -67,7 +67,7 @@ class SSD1306( Thread ):
     self._display = adafruit_ssd1306.SSD1306_I2C( self.width, self.height, I2C )
 
     # Create blank image for fdrawing.
-    # Make sure to create image with mode '1' for 1-bit color.
+    # Make sure to create image with mode "1" for 1-bit color.
     self._image  = Image.new("1", (self.width, self.height))
     self._draw   = ImageDraw.Draw( self._image )
     self._draw.rectangle( (0, 0, self.width, self.height), outline=0, fill=0)
@@ -103,8 +103,8 @@ class SSD1306( Thread ):
     """Get current IP address and return"""
 
     ip = check_output( self.IP ).decode("utf-8")
-    ip = ip.split(' ')[0]
-    return f'IP : {ip}'
+    ip = ip.split(" ")[0]
+    return f"IP : {ip}"
 
   def update(self):
     """Update information in the image that is drawn on screen"""
@@ -115,7 +115,7 @@ class SSD1306( Thread ):
     temp  = f"T  : {self.temperature:6.1f} C"                                   # Temperature string
     rh    = f"RH : {self.relative_humidity:6.1f} %"                             # RH string
 
-    self._draw.rectangle((0, 0, self.width, self.height), outline=0, fill=0)    # Draw rectangle to clear image; don't want old text showing
+    self._draw.rectangle((0, 0, self.width, self.height), outline=0, fill=0)    # Draw rectangle to clear image; don"t want old text showing
     if self.fontIP:                                                             # If fontIP is set
       self._draw.text( coord, self.getIP(), font=self.fontIP, fill=self.BRIGHTNESS) # Write IP address to screen
       coord[1] += self.fontIP.size                                              # Update the offset of upper left for next draw
@@ -133,12 +133,12 @@ class SSD1306( Thread ):
         self._display.image( self._image )                                      # Write image data to screen
         self._display.show()                                                    # Refresh the screen
       except Exception as err:
-        self.__log.error( f'Failed to update display : {err}' )
+        self.__log.error( f"Failed to update display : {err}" )
 
   def clear(self):
     """Clear the display; turn off all pixels"""
 
-    self.__log.debug('Clearing display')
+    self.__log.debug("Clearing display")
     self._draw.rectangle((0, 0, self.width, self.height), outline=0, fill=0)    # Draw rectangle to clear image
     self.draw()                                                                 # Update image on the display
 
@@ -156,11 +156,11 @@ class SSD1306( Thread ):
         needsClear = True                                                       # Set needsClear to be True
         self.update()                                                           # Update the image to draw to screen
         self.draw()                                                             # Draw to the screen
-        time.sleep(1.0)                                                         # Sleep for one (1) second; don't need screen to update very often
+        time.sleep(1.0)                                                         # Sleep for one (1) second; don"t need screen to update very often
 
       if needsClear:                                                            # If screen needs to be cleared
         self.clear()                                                            # clear the screen
         needsClear = False                                                      # Set needsClear to False
 
     self.clear()                                                                # Ensure display is cleared
-    self.__log.debug( 'Display thread dead!' )
+    self.__log.debug( "Display thread dead!" )

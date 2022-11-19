@@ -94,7 +94,7 @@ def testServer( host, port ):
         while True:
           dataLen = conn.recv( 4 )
           if dataLen:
-            data = conn.recv( int.from_bytes(dataLen, 'little') )
+            data = conn.recv( int.from_bytes(dataLen, "little") )
             print( json.loads( data.decode() ) )
           else:
             break
