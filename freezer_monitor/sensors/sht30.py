@@ -10,17 +10,15 @@ import logging
 
 import time
 
-from threading import Timer, Lock
+from threading import Timer
 
 import numpy
 import adafruit_sht31d
 
-from . import STOP_EVENT, I2C_LOCK, I2C
+from . import STOP_EVENT, I2C_LOCK
 from .basesensor import BaseSensor
 
 class SHT30( BaseSensor):
-
-    HEATER_LOCK = Lock()
 
     def __init__(self, i2c_bus, name, **kwargs):
         """
@@ -48,27 +46,6 @@ class SHT30( BaseSensor):
 
         self._heater_timer = None
         self.sensor        = adafruit_sht31d.SHT31D( i2c_bus )
-
-    def run_heater(self, duration = 10.0):
-        """
-        Run the heater for specified number of seconds
-
-        Keyword arguments:
-            duration (float) : Duration (in seconds) to run heater for
-
-        """
-
-        # Grab lock so that multiple heaters don't run at same time
-        with self.HEATER_LOCK:
-            self._toggle_heater( True )
-            # Wait for STOP_EVENT; if it happens, just return, else, continue function 
-            if STOP_EVENT.wait( duration ):                
-                return
-            self._toggle_heater( False )
-
-        # Initialize and start another timer thread for the heater
-        self._heater_timer = Timer( 30*60, self.run_heater ) 
-        self._heater_timer.start()
 
     def poll(self):
         """Poll the sensor for temperature and humidity"""
