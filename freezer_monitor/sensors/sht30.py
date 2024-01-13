@@ -15,7 +15,7 @@ from threading import Timer
 import numpy
 import adafruit_sht31d
 
-from . import STOP_EVENT, I2C_LOCK
+from .. import STOP_EVENT, I2C_LOCK
 from .basesensor import BaseSensor
 
 class SHT30( BaseSensor):

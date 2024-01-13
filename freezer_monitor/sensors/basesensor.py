@@ -7,16 +7,16 @@
 # Adafruit Blinka to support CircuitPython libraries. CircuitPython does
 # not support PIL/pillow (python imaging library)!
 import logging
-
+import os
 import time
 
 from threading import Thread, Lock
 
 import numpy
 
-from . import DATADIR, DEFAULT_INTERVAL, STOP_EVENT, I2C_LOCK, I2C
-from .timerotatingcsv import DailyRotatingCSV
-from .emailer import EMailer
+from .. import DATADIR, DEFAULT_INTERVAL, STOP_EVENT, I2C_LOCK, I2C
+from ..timerotatingcsv import DailyRotatingCSV
+from ..emailer import EMailer
 
 class BaseSensor( EMailer, Thread ):
 
@@ -82,7 +82,7 @@ class BaseSensor( EMailer, Thread ):
             return 0.0
         return dt																																	# Return dt
 
-   def run_heater(self, duration=10.0, interval=1800.0):
+    def run_heater(self, duration=10.0, interval=1800.0):
         """
         Run the heater for specified number of seconds
 
