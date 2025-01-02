@@ -9,158 +9,216 @@ from gpiozero import Button
 
 import adafruit_ssd1306
 
-from . import STOP_EVENT, I2C_LOCK, I2C 
+from . import STOP_EVENT, I2C_LOCK, I2C
 
-class DisplayButton( Thread ):
+NCYCLES = 3  # Number of times to cycle through all sensors
 
-  def __init__(self, event, timeout, pin = 17):
-    super().__init__()
 
-    self.timer   = None
-    self.event   = event
-    self.timeout = timeout
-    self.button  = Button( pin )
+class DisplayButton(Thread):
 
-  def run(self):
+    def __init__(self, event, timeout, pin=17):
+        super().__init__()
 
-    while not STOP_EVENT.is_set():
-      if self.button.wait_for_press(timeout=1.0):
-        self.event.set()
-        if self.timer: 
-          self.timer.cancel()
-        self.timer = Timer( self.timeout, self.event.clear )
-        self.timer.start()
-        time.sleep(0.2)                                                             # Quick sleep to prevent multiple very-fast clicks
+        self.timer = None
+        self.event = event
+        self.timeout = timeout
+        self.button = Button(pin)
 
-    if self.timer:
-      self.timer.cancel()
+    def run(self):
 
-class SSD1306( Thread ):
+        while not STOP_EVENT.is_set():
+            if not self.button.wait_for_press(timeout=1.0):
+                continue
 
-  IP         = ["hostname", "-I"]
-  FONT       = "DejaVuSansMono"
-  BRIGHTNESS = 200
+            self.event.set()
+            if self.timer:
+                self.timer.cancel()
+            self.timer = Timer(self.timeout, self.event.clear)
+            self.timer.start()
+            time.sleep(0.2)  # Quick sleep to prevent multiple very-fast clicks
 
-  def __init__(self, timeout = 30.0, showIP = False):
-    super().__init__()
+        if self.timer:
+            self.timer.cancel()
 
-    self.__log    = logging.getLogger(__name__)
-    self.__log.setLevel( logging.DEBUG )
 
-    self._showIP            = showIP
-    self._displayOn         = Event()
-    self._lock              = Lock()
-    self._timer             = None
+class SSD1306(Thread):
+    """
+    Thread for updating screen
 
-    self.buttonThread       = DisplayButton( self._displayOn, timeout ) 
+    """
 
-    self._temperature       = float("nan")
-    self._relative_humidity = float("nan")
+    IP = ["hostname", "-I"]
+    FONT = "DejaVuSansMono"
+    BRIGHTNESS = 200
 
-    self._displayThread     = None
-    # Create the SSD1306 OLED class.
-    # The first two parameters are the pixel width and pixel height.  Change these
-    # to the right size for your display!
-    self.width    = 128
-    self.height   =  32
-    self.padding  =  -2
-    self._display = adafruit_ssd1306.SSD1306_I2C( self.width, self.height, I2C )
+    def __init__(
+        self,
+        sensors: list,
+        timeout: int | float = 30.0,
+        ncycles: int | None = None,
+        showIP: bool = False,
+    ):
+        super().__init__()
 
-    # Create blank image for fdrawing.
-    # Make sure to create image with mode "1" for 1-bit color.
-    self._image  = Image.new("1", (self.width, self.height))
-    self._draw   = ImageDraw.Draw( self._image )
-    self._draw.rectangle( (0, 0, self.width, self.height), outline=0, fill=0)
-      
-    if self._showIP:
-      self.fontIP = ImageFont.truetype(self.FONT, size =  7)
-      self.font   = ImageFont.truetype(self.FONT, size = 12)
-    else:
-      self.fontIP = None
-      self.font   = ImageFont.truetype(self.FONT, size = 15)
+        self.__log = logging.getLogger(__name__)
+        self.__log.setLevel(logging.DEBUG)
 
-  # Ensure thread-safe updating of temperature
-  @property
-  def temperature(self):
-    with self._lock:
-      return self._temperature
-  @temperature.setter
-  def temperature(self, val):
-    with self._lock:
-      self._temperature = val
+        self._showIP = showIP
+        self._displayOn = Event()
+        self._lock = Lock()
+        self._timer = None
 
-  # Ensure thread-safe updating of relative humidity
-  @property
-  def relative_humidity(self):
-    with self._lock:
-      return self._relative_humidity
-  @relative_humidity.setter
-  def relative_humidity(self, val):
-    with self._lock:
-      self._relative_humidity = val
+        # Get number of sensors and set class attribute
+        nsensors = len(sensors)
+        self.sensors = sensors
 
-  def getIP(self):
-    """Get current IP address and return"""
+        # Default number of cycles, clip to beween 3 and 10
+        ncycles = min(
+            max(ncycles or NCYCLES, NCYCLES),
+            10,
+        )
 
-    ip = check_output( self.IP ).decode("utf-8")
-    ip = ip.split(" ")[0]
-    return f"IP : {ip}"
+        # Define time to show each sensor's data while cycling
+        self.cycle_time = max(
+            timeout / nsensors / ncycles,
+            1.5,
+        )
 
-  def update(self):
-    """Update information in the image that is drawn on screen"""
+        # Modify timeout because need to change based on nsensors
+        timeout = self.cycle_time * ncycles * nsensors
 
-    self.__log.debug( "Updating the display" )
+        # Initialize display button object for turn on/off display 
+        self.buttonThread = DisplayButton(self._displayOn, timeout)
 
-    coord = [0, self.padding]                                                   # Upper-left corner to start drawing
-    temp  = f"T  : {self.temperature:6.1f} C"                                   # Temperature string
-    rh    = f"RH : {self.relative_humidity:6.1f} %"                             # RH string
+        self._displayThread = None
+        # Create the SSD1306 OLED class.
+        # The first two parameters are the pixel width and pixel height.
+        # Change these to the right size for your display!
+        self.width = 128
+        self.height = 32
+        self.padding = -2
+        self._display = adafruit_ssd1306.SSD1306_I2C(
+            self.width,
+            self.height,
+            I2C,
+        )
 
-    self._draw.rectangle((0, 0, self.width, self.height), outline=0, fill=0)    # Draw rectangle to clear image; don"t want old text showing
-    if self.fontIP:                                                             # If fontIP is set
-      self._draw.text( coord, self.getIP(), font=self.fontIP, fill=self.BRIGHTNESS) # Write IP address to screen
-      coord[1] += self.fontIP.size                                              # Update the offset of upper left for next draw
+        # Create blank image for fdrawing.
+        # Make sure to create image with mode "1" for 1-bit color.
+        self._image = Image.new(
+            "1",
+            (self.width, self.height),
+        )
+        self._draw = ImageDraw.Draw(self._image)
+        self._draw.rectangle(
+            (0, 0, self.width, self.height),
+            outline=0,
+            fill=0,
+        )
 
-    self._draw.text( coord, temp, font=self.font, fill=self.BRIGHTNESS)          # Draw temperature data to image
-    coord[1] += self.font.size                                                  # Update the offset of upper left for next draw
+        if self._showIP:
+            self.fontIP = ImageFont.truetype(self.FONT, size=7)
+            self.font = ImageFont.truetype(self.FONT, size=12)
+        else:
+            self.fontIP = None
+            self.font = ImageFont.truetype(self.FONT, size=15)
 
-    self._draw.text( coord, rh,   font=self.font, fill=self.BRIGHTNESS)          # Draw relative humidity data to image
+    def getIP(self):
+        """Get current IP address and return"""
 
-  def draw(self):
-    """Thread safe way to draw image on screen"""
+        ip = check_output(self.IP).decode("utf-8")
+        ip = ip.split(" ")[0]
+        return f"IP : {ip}"
 
-    with I2C_LOCK:                                                              # Get I2C lock for thread safety
-      try:
-        self._display.image( self._image )                                      # Write image data to screen
-        self._display.show()                                                    # Refresh the screen
-      except Exception as err:
-        self.__log.error( f"Failed to update display : {err}" )
+    def update(self, sensor):
+        """Update information in the image that is drawn on screen"""
 
-  def clear(self):
-    """Clear the display; turn off all pixels"""
+        self.__log.debug("Updating the display")
+        
+        txt = sensor.display_text()
+        if len(txt) < 2:
+            self.__log.error("Too few lines to display!")
+            return
 
-    self.__log.debug("Clearing display")
-    self._draw.rectangle((0, 0, self.width, self.height), outline=0, fill=0)    # Draw rectangle to clear image
-    self.draw()                                                                 # Update image on the display
+        coord = [0, self.padding]  # Upper-left corner to start drawing
 
-  def start(self):
-    """Overload the start method to start button thread as well"""
+        self._draw.rectangle(
+            (0, 0, self.width, self.height),
+            outline=0,
+            fill=0,
+        )  # Draw rectangle to clear image; don"t want old text showing
+        if self.fontIP:  # If fontIP is set
+            self._draw.text(
+                coord,
+                self.getIP(),
+                font=self.fontIP,
+                fill=self.BRIGHTNESS,
+            )  # Write IP address to screen
 
-    self.buttonThread.start()
-    super().start()
+            # Update the offset of upper left for next draw
+            coord[1] += self.fontIP.size
 
-  def run(self):
+        self._draw.text(
+            coord,
+            txt[0],
+            font=self.font,
+            fill=self.BRIGHTNESS,
+        )  # Draw temperature data to image
 
-    needsClear = False                                                          # Dose the screen need to be cleared
-    while not STOP_EVENT.is_set():                                              # While stop event is NOT set
-      while self._displayOn.wait(timeout=1.0):                                  # Wait for displayOn event; is false if not set within timeout
-        needsClear = True                                                       # Set needsClear to be True
-        self.update()                                                           # Update the image to draw to screen
-        self.draw()                                                             # Draw to the screen
-        time.sleep(1.0)                                                         # Sleep for one (1) second; don"t need screen to update very often
+        # Update the offset of upper left for next draw
+        coord[1] += self.font.size
 
-      if needsClear:                                                            # If screen needs to be cleared
-        self.clear()                                                            # clear the screen
-        needsClear = False                                                      # Set needsClear to False
+        self._draw.text(
+            coord,
+            txt[1],
+            font=self.font,
+            fill=self.BRIGHTNESS,
+        )  # Draw relative humidity data to image
 
-    self.clear()                                                                # Ensure display is cleared
-    self.__log.debug( "Display thread dead!" )
+    def draw(self):
+        """Thread safe way to draw image on screen"""
+
+        with I2C_LOCK:  # Get I2C lock for thread safety
+            try:
+                self._display.image(self._image)  # Write image data to screen
+                self._display.show()  # Refresh the screen
+            except Exception as err:
+                self.__log.error("Failed to update display : %s", err)
+
+    def clear(self):
+        """Clear the display; turn off all pixels"""
+
+        self.__log.debug("Clearing display")
+        self._draw.rectangle(
+            (0, 0, self.width, self.height),
+            outline=0,
+            fill=0,
+        )  # Draw rectangle to clear image
+        self.draw()  # Update image on the display
+
+    def start(self):
+        """Overload the start method to start button thread as well"""
+
+        self.buttonThread.start()
+        super().start()
+
+    def run(self):
+
+        needsClear = False  # Dose the screen need to be cleared
+        while not STOP_EVENT.is_set():  # While stop event is NOT set
+            idx = 0  # index into self.sensors to display
+            # Wait for displayOn event; is false if not set within timeout
+            while self._displayOn.wait(timeout=1.0):
+                needsClear = True  # Set needsClear to be True
+                self.update(self.sensors[idx])  # Update the image to draw to screen
+                self.draw()  # Draw to the screen
+                idx = (idx + 1) % len(self.sensors)
+                # Sleep for one (1) second; don't need screen to update often
+                time.sleep(self.cycle_time)
+
+            if needsClear:  # If screen needs to be cleared
+                self.clear()  # clear the screen
+                needsClear = False  # Set needsClear to False
+
+        self.clear()  # Ensure display is cleared
+        self.__log.debug("Display thread dead!")

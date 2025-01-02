@@ -26,37 +26,45 @@ from .websocket import WebSocket
 from .display import SSD1306
 from .emailer import EMailer
 
+
 class FreezerMonitor( EMailer, Thread ):
 
-  def __init__(self, maxThres=-10, minThres=None, interval = DEFAULT_INTERVAL, no_socket=False, **kwargs):
-    """
-    Keyword arguments:
-      maxThres (int,float) : Temperature threshold (degree C) to trigger warning;
-        if temperature exceeds this value, warning sent. Setting this will override
-        the minThres keyword
-      minThres (int,float) : Temperature threshold (degree C) to trigger warning;
-        if temperature is below this value, warning sent. This keyword is ignored
-        if the maxThres keyword is set. 
-      interval (int, float) : Polling interval for sensor (seconds)
-      no_socket (bool) : If set, will disable sending data to server socket
+    def __init__(
+        self,
+        maxThres=-10,
+        minThres=None,
+        interval: int | float = DEFAULT_INTERVAL,
+        no_socket: bool = False,
+        **kwargs,
+    ):
+        """
+        Keyword arguments:
+          maxThres (int,float) : Temperature threshold (degree C) to trigger warning;
+            if temperature exceeds this value, warning sent. Setting this will override
+            the minThres keyword
+          minThres (int,float) : Temperature threshold (degree C) to trigger warning;
+            if temperature is below this value, warning sent. This keyword is ignored
+            if the maxThres keyword is set. 
+          interval (int, float) : Polling interval for sensor (seconds)
+          no_socket (bool) : If set, will disable sending data to server socket
 
-    """
+        """
 
-    super().__init__()
+        super().__init__()
 
-    self.__log = logging.getLogger(__name__)
-    self.__log.setLevel( logging.DEBUG )
+        self.__log = logging.getLogger(__name__)
+        self.__log.setLevel( logging.DEBUG )
 
-    self._heatTimer  = None
+        self._heatTimer  = None
 
-    self._display    = SSD1306()
-    self._interval   = interval
-    self.minThres    = minThres
-    self.maxThres    = maxThres
-    self._sensor     = adafruit_sht31d.SHT31D( I2C )
-    self.data        = DailyRotatingCSV( os.path.join(DATADIR, "freezer_stats.csv") ) 
-    self.webSocket   = None if no_socket else WebSocket( **kwargs )																	# Initialize web socket to send data to website front-end
-    self.t_30min_avg = numpy.full( int(30*60/interval), numpy.nan, dtype=numpy.float32 )
+        self._display    = SSD1306()
+        self._interval   = interval
+        self.minThres    = minThres
+        self.maxThres    = maxThres
+        self._sensor     = adafruit_sht31d.SHT31D( I2C )
+        self.data        = DailyRotatingCSV( os.path.join(DATADIR, "freezer_stats.csv") ) 
+        self.webSocket   = None if no_socket else WebSocket( **kwargs )																	# Initialize web socket to send data to website front-end
+        self.t_30min_avg = numpy.full( int(30*60/interval), numpy.nan, dtype=numpy.float32 )
 
   def delay(self, t0):
     """

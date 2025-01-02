@@ -18,16 +18,22 @@ import adafruit_sht31d
 from .. import STOP_EVENT, I2C_LOCK
 from .basesensor import BaseSensor
 
-class SHT30( BaseSensor):
 
-    def __init__(self, i2c_bus, name, **kwargs):
+class SHT30(BaseSensor):
+
+    def __init__(
+        self,
+        i2c_bus,
+        name: str,
+        **kwargs,
+    ):
         """
 
         Arguments:
-            i2c_bus (I2C) : An I2C bus the SHT30 sensor is connected to. If using a
-                multiplexer for multiple sensors, this should be the multiplexer
-                channel.
-
+            i2c_bus (I2C) : An I2C bus the SHT30 sensor is connected to.
+                If using a  multiplexer for multiple sensors, this should be
+                the multiplexer channel.
+            name (str): Name to use for the sensor
         Keyword arguments:
             See BaseSensor for keywords
 
@@ -42,17 +48,22 @@ class SHT30( BaseSensor):
         super().__init__(name, **kwargs)
 
         self.__log = logging.getLogger(__name__)
-        self.__log.setLevel( logging.DEBUG )
+        self.__log.setLevel(logging.DEBUG)
 
-        self._heater_timer = None
-        self.sensor        = adafruit_sht31d.SHT31D( i2c_bus )
+        self.sensor = adafruit_sht31d.SHT31D(i2c_bus)
+
+        self.t_30min_avg = numpy.full(
+            int(30 * 60 / self.interval),
+            numpy.nan,
+            dtype=numpy.float32,
+        )
 
     def poll(self):
         """Poll the sensor for temperature and humidity"""
 
         t = rh = numpy.nan
-        with I2C_LOCK:																														# Get I2C lock for thread safety
-            try:																																		# Try to get information from temperature sensor
+        with I2C_LOCK:  # Get I2C lock for thread safety
+            try:  # Try to get information from temperature sensor
                 t = self.sensor.temperature
             except Exception as err:
                 self.__log.error(
@@ -60,7 +71,7 @@ class SHT30( BaseSensor):
                     err,
                 )
 
-            try:																																		# Try to get information from RH sensor
+            try:  # Try to get information from RH sensor
                 rh = self.sensor.relative_humidity
             except Exception as err:
                 self.__log.error(
@@ -68,40 +79,60 @@ class SHT30( BaseSensor):
                     err,
                 )
 
-        return t, rh																															# Return the temperature and RH
+        return t, rh  # Return the temperature and RH
+
+    def display_text(self) -> list[str]:
+
+        temp, rh = self.poll()
+        return [
+            f"Name : {self.name}", 
+            f"T    : {temp:6.1f} C", 
+        ] 
 
     def run(self):
         """Run in thread for polling sensor"""
 
-        self._heater_timer = Timer( 0.0, self.run_heater )													  # Initialize timer thread to run heater
-        self._heater_timer.start()																										# Start the timer thread
+        # Initialize timer thread to run heater and start timer
+        self._heater_timer = Timer(0.0, self.run_heater)
+        self._heater_timer.start()
 
         t0 = 0.0
-        while not STOP_EVENT.wait( self.delay(t0) ):                              # Wait for event, delay is computed in function and we want event to be NOT set
-            t0       = time.monotonic()# Get current monotonic time; used to compute delay until next poll
-            temp, rh = self.poll()     # Get temperature and humidity
+        # Wait for event, delay is computed in function and we want event to
+        # be NOT set
+        while not STOP_EVENT.wait(self.delay(t0)):
+            # Get current monotonic time; used to compute delay until next poll
+            t0 = time.monotonic()
+            temp, rh = self.poll()  # Get temperature and humidity
 
-            self.data_log.write( f"{temp:6.1f}", f"{rh:6.1f}" )                         # Write data to the csv file
+            # Write data to the csv file
+            self.data_log.write(f"{temp:6.1f}", f"{rh:6.1f}")
 
-            self.t_30min_avg     = numpy.roll( self.t_30min_avg, -1 )               # Shift data in rolling averge for new value
-            self.t_30min_avg[-1] = temp                                             # Add new temperature to rolling average array 
+            # Shift data in rolling averge for new value
+            # and add new temperature to rolling average array
+            self.t_30min_avg = numpy.roll(self.t_30min_avg, -1)
+            self.t_30min_avg[-1] = temp
 
-            avg = numpy.nanmean( self.t_30min_avg )                                 # Compute average temperature
-            if not numpy.isfinite(avg):                                             # If is not finite
-                self.allNaN()                                                         # AllNaN email
-            elif isinstance(self.max_thres, (int,float)) and (avg > self.max_thres):
-                self.overTemp(temp, rh)                                               # Over temp email
-            elif isinstance(self.min_thres, (int,float)) and (avg < self.min_thres):
-                self.underTemp(temp, rh)                                              # Under temp email
+            # If no max thres is set, then just continue
+            if not isinstance(self.max_thres, (int, float)):
+                continue
+
+            # Compute average temperature
+            avg = numpy.nanmean(self.t_30min_avg)
+            if not numpy.isfinite(avg):  # If is not finite
+                self.allNaN()  # AllNaN email
+            elif avg > self.max_thres:
+                self.overTemp(temp, rh)  # Over temp email
+            elif avg < self.min_thres:
+                self.underTemp(temp, rh)  # Under temp email
 
         # If heater timer thread exists, cancel it
-        if self._heater_timer: 
+        if self._heater_timer:
             self._heater_timer.cancel()
         # Ensure the heater is turned off
-        self._toggle_heater( False )
+        self._toggle_heater(False)
 
         # Close data log and ensure thread is dead
         self.data_log.close()
         self.data_log.join()
 
-        self.__log.debug( "Sensor '%s' thread dead!", self.name )
+        self.__log.debug("Sensor '%s' thread dead!", self.name)
