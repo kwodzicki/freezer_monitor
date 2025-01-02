@@ -2,8 +2,8 @@
 
 import argparse
 import signal
-from freezer_monitor import STOP_EVENT, lfile
-from freezer_monitor.freezer_monitor import DEFAULT_INTERVAL, FreezerMonitor
+from . import STOP_EVENT, lfile
+from .freezer_monitor import DEFAULT_INTERVAL, FreezerMonitor
 
 def kill( *args, **kwargs ):
   print( "setting STOP_EVENT" )
@@ -25,7 +25,7 @@ def checkMinMax( val, flag ):
 
     raise Exception( "Expected str input")
 
-if __name__ == "__main__":
+def main():
 
     parser = argparse.ArgumentParser(description="Monitor freezer temperature",
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)

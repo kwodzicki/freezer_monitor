@@ -1,0 +1,9 @@
+numpy
+matplotlib
+Pillow
+pyYAML
+gpiozero
+lgpio
+adafruit-circuitpython-ssd1306
+adafruit-circuitpython-sht31d
+adafruit-circuitpython-tca9548a

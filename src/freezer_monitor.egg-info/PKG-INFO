@@ -1,0 +1,15 @@
+Metadata-Version: 2.1
+Name: freezer_monitor
+Version: 0.2.1
+Summary: Package for monitoring temperature in freezer
+Author-email: "Kyle R. Wodzicki" <krwodzicki@gmail.com>
+Project-URL: Repository, https://github.com/kwodzicki/freezer_monitor
+Requires-Dist: numpy
+Requires-Dist: matplotlib
+Requires-Dist: Pillow
+Requires-Dist: pyYAML
+Requires-Dist: gpiozero
+Requires-Dist: lgpio
+Requires-Dist: adafruit-circuitpython-ssd1306
+Requires-Dist: adafruit-circuitpython-sht31d
+Requires-Dist: adafruit-circuitpython-tca9548a

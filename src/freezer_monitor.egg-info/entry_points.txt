@@ -1,0 +1,2 @@
+[console_scripts]
+freezerMonitor = freezer_monitor.cli:main
