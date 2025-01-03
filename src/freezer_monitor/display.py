@@ -14,33 +14,6 @@ from . import STOP_EVENT, I2C_LOCK, I2C
 NCYCLES = 3  # Number of times to cycle through all sensors
 
 
-class DisplayButton(Thread):
-
-    def __init__(self, event, timeout, pin=17):
-        super().__init__()
-
-        self.timer = None
-        self.event = event
-        self.timeout = timeout
-        self.button = Button(pin)
-
-    def run(self):
-
-        while not STOP_EVENT.is_set():
-            if not self.button.wait_for_press(timeout=1.0):
-                continue
-
-            self.event.set()
-            if self.timer:
-                self.timer.cancel()
-            self.timer = Timer(self.timeout, self.event.clear)
-            self.timer.start()
-            time.sleep(0.2)  # Quick sleep to prevent multiple very-fast clicks
-
-        if self.timer:
-            self.timer.cancel()
-
-
 class SSD1306(Thread):
     """
     Thread for updating screen
@@ -57,6 +30,7 @@ class SSD1306(Thread):
         timeout: int | float = 30.0,
         ncycles: int | None = None,
         showIP: bool = False,
+        i2c = None,
     ):
         super().__init__()
 
@@ -72,20 +46,23 @@ class SSD1306(Thread):
         nsensors = len(sensors)
         self.sensors = sensors
 
-        # Default number of cycles, clip to beween 3 and 10
-        ncycles = min(
-            max(ncycles or NCYCLES, NCYCLES),
-            10,
-        )
+        if nsensors > 0:
+            # Default number of cycles, clip to beween 3 and 10
+            ncycles = min(
+                max(ncycles or NCYCLES, NCYCLES),
+                10,
+            )
 
-        # Define time to show each sensor's data while cycling
-        self.cycle_time = max(
-            timeout / nsensors / ncycles,
-            1.5,
-        )
+            # Define time to show each sensor's data while cycling
+            self.cycle_time = max(
+                timeout / nsensors / ncycles,
+                1.5,
+            )
 
-        # Modify timeout because need to change based on nsensors
-        timeout = self.cycle_time * ncycles * nsensors
+            # Modify timeout because need to change based on nsensors
+            timeout = self.cycle_time * ncycles * nsensors
+        else:
+            self.cycle_time = timeout
 
         # Initialize display button object for turn on/off display 
         self.buttonThread = DisplayButton(self._displayOn, timeout)
@@ -100,7 +77,7 @@ class SSD1306(Thread):
         self._display = adafruit_ssd1306.SSD1306_I2C(
             self.width,
             self.height,
-            I2C,
+            i2c or I2C,
         )
 
         # Create blank image for fdrawing.
@@ -222,3 +199,30 @@ class SSD1306(Thread):
 
         self.clear()  # Ensure display is cleared
         self.__log.debug("Display thread dead!")
+
+
+class DisplayButton(Thread):
+
+    def __init__(self, event, timeout, pin=17):
+        super().__init__()
+
+        self.timer = None
+        self.event = event
+        self.timeout = timeout
+        self.button = Button(pin)
+
+    def run(self):
+
+        while not STOP_EVENT.is_set():
+            if not self.button.wait_for_press(timeout=1.0):
+                continue
+
+            self.event.set()
+            if self.timer:
+                self.timer.cancel()
+            self.timer = Timer(self.timeout, self.event.clear)
+            self.timer.start()
+            time.sleep(0.2)  # Quick sleep to prevent multiple very-fast clicks
+
+        if self.timer:
+            self.timer.cancel()
