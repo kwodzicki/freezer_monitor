@@ -73,9 +73,17 @@ class BaseSensor(EMailer, Thread):
             try:  # Try to set the heater state
                 self.sensor.heater = state
             except Exception as err:  # On exception, log the a warning
-                self.__log.warning("Failed to toggle heater : %s", err)
+                self.__log.warning(
+                    "%s - Failed to toggle heater : %s",
+                    self.name,
+                    err,
+                )
             else:  # Else, some debug logging
-                self.__log.debug("Heater state set to : %s", state)
+                self.__log.debug(
+                    "%s - Heater state set to : %s",
+                    self.name,
+                    state,
+                )
 
     def delay(self, t0):
         """

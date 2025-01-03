@@ -9,9 +9,10 @@ from gpiozero import Button
 
 import adafruit_ssd1306
 
-from . import STOP_EVENT, I2C_LOCK, I2C
+from . import STOP_EVENT, I2C_LOCK
 
 NCYCLES = 3  # Number of times to cycle through all sensors
+TIMEOUT = 60.0  # Timeout (in seconds) for display to turn off
 
 
 class SSD1306(Thread):
@@ -26,11 +27,11 @@ class SSD1306(Thread):
 
     def __init__(
         self,
+        i2c,
         sensors: list,
-        timeout: int | float = 30.0,
+        timeout: int | float | None = None,
         ncycles: int | None = None,
         showIP: bool = False,
-        i2c=None,
     ):
         super().__init__()
 
@@ -41,6 +42,8 @@ class SSD1306(Thread):
         self._displayOn = Event()
         self._lock = Lock()
         self._timer = None
+
+        timeout = timeout or TIMEOUT
 
         # Get number of sensors and set class attribute
         nsensors = len(sensors)
@@ -77,7 +80,7 @@ class SSD1306(Thread):
         self._display = adafruit_ssd1306.SSD1306_I2C(
             self.width,
             self.height,
-            i2c or I2C,
+            i2c,
         )
 
         # Create blank image for fdrawing.
@@ -110,7 +113,7 @@ class SSD1306(Thread):
     def update(self, sensor):
         """Update information in the image that is drawn on screen"""
 
-        self.__log.debug("Updating the display")
+        self.__log.debug("Updating the display: %s", sensor.name)
 
         txt = sensor.display_text()
         if len(txt) < 2:

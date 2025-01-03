@@ -5,9 +5,7 @@ import smtplib
 from email.message import EmailMessage
 from threading import Thread, Lock
 
-import yaml
-
-from . import SETTINGS_FILE
+from .utils import load_settings
 
 RESEND = 30 * 60.0  # Time before another email will be sent
 TLOCK = Lock()
@@ -45,11 +43,8 @@ class EMailer:
         self.__underTemp = -RESEND
         self.__allNaN = -RESEND
 
-        with open(SETTINGS_FILE, mode="r") as fid:
-            settings = yaml.load(
-                fid,
-                Loader=yaml.SafeLoader,
-            )
+        self.name = None
+        settings = load_settings()
 
         self.send_to = settings.get("send_to", None)
         if self.send_to is None:
@@ -78,9 +73,9 @@ class EMailer:
         if (time.monotonic()-self.__allNaN) < RESEND:
             return
 
-        subject = "Freezer sensor ERROR!"
+        subject = f"{self.name} sensor ERROR!"
         content = (
-            "The 30-min average temperature of the freezer is "
+            f"The 30-min average temperature of the '{self.name}' is "
             "full of NaN values!"
             "\n\n"
             "Something has gone wrong, check immediately!!!"
@@ -99,10 +94,10 @@ class EMailer:
         if (time.monotonic()-self.__overTemp) < RESEND:
             return
 
-        subject = "Freezer getting HOT!"
+        subject = f"{self.name} getting HOT!"
         content = (
-            "The 30-min average temperature of the freezer has exceeded "
-            "the threshold set!"
+            f"The 30-min average temperature of the '{self.name}' has "
+            "exceeded the threshold set!"
             "\n\n"
             "Current stats:"
             "\n\n"
@@ -125,10 +120,10 @@ class EMailer:
         if (time.monotonic()-self.__underTemp) < RESEND:
             return
 
-        subject = "Freezer getting too COLD!"
+        subject = f"{self.name} getting too COLD!"
         content = (
-            "The 30-min average temperature of the freezer has gone below "
-            "the threshold set!"
+            f"The 30-min average temperature of the '{self.name}' has gone "
+            "below the threshold set!"
             "\n\n"
             "Current stats:"
             "\n\n"

@@ -52,6 +52,8 @@ class SHT30(BaseSensor):
 
         self.sensor = adafruit_sht31d.SHT31D(i2c_bus)
 
+        self.websocket = None
+
         self.t_30min_avg = numpy.full(
             int(30 * 60 / self.interval),
             numpy.nan,
@@ -67,7 +69,8 @@ class SHT30(BaseSensor):
                 t = self.sensor.temperature
             except Exception as err:
                 self.__log.error(
-                    "Failed to get temperature from sensor : %s",
+                    "%s - Failed to get temperature from sensor : %s",
+                    self.name,
                     err,
                 )
 
@@ -75,7 +78,8 @@ class SHT30(BaseSensor):
                 rh = self.sensor.relative_humidity
             except Exception as err:
                 self.__log.error(
-                    "Failed to get relative humidity from sensor : %s",
+                    "%s - Failed to get relative humidity from sensor : %s",
+                    self.name,
                     err,
                 )
 
@@ -107,6 +111,12 @@ class SHT30(BaseSensor):
             # Write data to the csv file
             self.data_log.write(f"{temp:6.1f}", f"{rh:6.1f}")
 
+            if self.websocket:
+                self.websocekt.write(
+                    name=self.name,
+                    temp=temp,
+                    rh=rh,
+                )
             # Shift data in rolling averge for new value
             # and add new temperature to rolling average array
             self.t_30min_avg = numpy.roll(self.t_30min_avg, -1)

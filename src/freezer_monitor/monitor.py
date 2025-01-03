@@ -8,9 +8,13 @@
 # not support PIL/pillow (python imaging library)!
 import logging
 
+import busio
+from board import SCL, SDA
+
 from adafruit_tca9548a import TCA9548A
 
-from . import STOP_EVENT, I2C
+from . import STOP_EVENT
+from .utils import load_settings
 from .display import SSD1306
 from .sensors import sht30
 
@@ -19,30 +23,45 @@ def main(**kwargs):
 
     log = logging.getLogger(__name__)
 
+    i2c = busio.I2C(SCL, SDA)
+
+    settings = load_settings()
     # Iniitalize muxer
     log.info("Initializing sensor(s)")
-    muxer = TCA9548A(I2C)
+    muxer = TCA9548A(i2c)
     sensors = []
     for channel in muxer_device_on_channel(muxer, 0x44):
-        name = kwargs.get("channel{channel}", f"Device{channel}")
+        name = (
+            settings
+            .get(f"channel{channel}", {})
+            .get('name', f"Device{channel}")
+        )
         sensor = sht30.SHT30(muxer[channel], name, **kwargs)
         sensor.start()
         sensors.append(sensor)
 
     log.info("Loading display")
     # Initialize display
-    channels = muxer_device_on_channel(muxer, 0x3c)
-    if len(channels) != 1:
-        log.error("Failed to find display!")
-        display = None
+    device = None
+    # If device found directly on I2C bus, then use that
+    # Else we look for it in the muxer
+    if i2c_devcie_on_channel(i2c, 0x3c):
+        device = i2c
     else:
-        i2c = muxer[
-            channels[0]
-        ]
-        display = SSD1306(sensors, i2c=i2c)
-        display.start()
+        channels = muxer_device_on_channel(muxer, 0x3c)
+        if len(channels) != 1:
+            log.error("Failed to find display!")
+        else:
+            device = muxer[
+                channels[0]
+            ]
 
-    # display = SSD1306(sensors)
+    # If device is set, then initialize display
+    if device:
+        display = SSD1306(device, sensors)
+        display.start()
+    else:
+        display = None
 
     log.info("Waiting for stop event")
     # Wait for event, delay is computed in function and we want event
@@ -58,6 +77,23 @@ def main(**kwargs):
         display.join()  # Join display thread
 
     log.debug("Monitor thread dead!")
+
+
+def i2c_devcie_on_channel(i2c, dev_address: int) -> bool:
+    """
+    Try to find device on I2C bus
+
+    Similar to the muxer function below, but this is intended to look
+    for a device on the "main" I2C bus rather than through the muxer.
+
+    """
+
+    if i2c.try_lock():
+        addresses = i2c.scan()
+        i2c.unlock()
+        return dev_address in addresses
+
+    return False
 
 
 def muxer_device_on_channel(muxer: TCA9548A, dev_address: int) -> list[int]:
