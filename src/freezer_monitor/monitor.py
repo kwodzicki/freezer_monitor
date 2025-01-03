@@ -31,26 +31,25 @@ def main(**kwargs):
     muxer = TCA9548A(I2C)
     sensors = []
     for channel in muxer_device_on_channel(muxer, 0x44):
-        name = kwargs.get("channel{channel}", "Device{channel")
-        # sensor = sht30.SHT30(muxer[channel], name, **kwargs)
-        # sensor.start()
-        # sensors.append(sensor)
+        name = kwargs.get("channel{channel}", f"Device{channel}")
+        sensor = sht30.SHT30(muxer[channel], name, **kwargs)
+        sensor.start()
+        sensors.append(sensor)
 
     log.info("Loading display")
     # Initialize display
-    # channels = muxer_device_on_channel(muxer, 0x3c)
-    # print(channels)
-    # if len(channels) != 1:
-    #     log.error("Failed to find display!")
-    #     display = None
-    # else:
-    #     i2c = muxer[
-    #         channels[0]
-    #     ]
-    #     display = SSD1306(sensors, i2c=i2c)
-    #     display.start()
+    channels = muxer_device_on_channel(muxer, 0x3c)
+    if len(channels) != 1:
+        log.error("Failed to find display!")
+        display = None
+    else:
+        i2c = muxer[
+            channels[0]
+        ]
+        display = SSD1306(sensors, i2c=i2c)
+        display.start()
 
-    display = SSD1306(sensors)
+    # display = SSD1306(sensors)
 
     log.info("Waiting for stop event")
     # Wait for event, delay is computed in function and we want event to be NOT set 
@@ -94,7 +93,6 @@ def muxer_device_on_channel(muxer: TCA9548A, dev_address: int) -> list[int]:
             if address != muxer.address 
         ]
         muxer[channel].unlock()
-        print(addresses)
         if len(addresses) == 0:
             log.debug("No device(s) found on channel '%s'", channel)
             continue

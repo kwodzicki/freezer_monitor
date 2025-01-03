@@ -12,7 +12,6 @@ def kill( *args, **kwargs ):
   STOP_EVENT.set()
 
 def checkMinMax( val, flag ):
-    print( type(val) )
     if val is None or isinstance(val, (int, float)):
         return val
 

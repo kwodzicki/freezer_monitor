@@ -185,13 +185,18 @@ class SSD1306(Thread):
         while not STOP_EVENT.is_set():  # While stop event is NOT set
             idx = 0  # index into self.sensors to display
             # Wait for displayOn event; is false if not set within timeout
-            while self._displayOn.wait(timeout=1.0):
+            while self._displayOn.wait(timeout=1):
+                if len(self.sensors) == 0:
+                    continue
                 needsClear = True  # Set needsClear to be True
                 self.update(self.sensors[idx])  # Update the image to draw to screen
                 self.draw()  # Draw to the screen
                 idx = (idx + 1) % len(self.sensors)
-                # Sleep for one (1) second; don't need screen to update often
-                time.sleep(self.cycle_time)
+
+                # Wait for cycle_time for STOP_EVENT to be set. If set within
+                # timeout, then break out of loop
+                if STOP_EVENT.wait(timeout=self.cycle_time):
+                    break
 
             if needsClear:  # If screen needs to be cleared
                 self.clear()  # clear the screen
