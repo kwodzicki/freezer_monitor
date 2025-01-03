@@ -1,90 +1,113 @@
 import os
 from datetime import datetime
-from threading import Thread, Lock
+from threading import Thread
 from queue import Queue
 
-class DailyRotatingCSV( Thread ):
 
-  def __init__(self, csvFile, backupCount=30):
-    super().__init__()
+class DailyRotatingCSV(Thread):
+    """
+    Thread to rotate save file every day
 
-    self.csv = os.path.abspath( csvFile )
-    os.makedirs( os.path.dirname( self.csv ), exist_ok = True )
+    """
 
-    self._backup = backupCount if backupCount > 1 else 1
-    self._QUEUE  = Queue()
-    self._date   = None
-    self._fid    = None
-    self._closed = False
-    self.start()
+    def __init__(self, csvFile, backupCount=30):
+        super().__init__()
 
-  def _initFile(self):
-    
-    if self._fid: self._fid.close()                                             # if file open, close it
+        self.csv = os.path.abspath(csvFile)
+        os.makedirs(
+            os.path.dirname(self.csv),
+            exist_ok=True,
+        )
 
-    fpath = f"{self.csv}.{self._date:%Y-%m-%d}"
-    self._fid = open( fpath, mode="a", buffering=1 )
-    try:
-      os.remove( self.csv )
-    except:
-      pass
-    os.link( fpath, self.csv )
+        self._backup = backupCount if backupCount > 1 else 1
+        self._QUEUE = Queue()
+        self._date = None
+        self._fid = None
+        self._closed = False
+        self.start()
 
-  def _removeOld(self):
+    def _initFile(self):
 
-    fdir, fname = os.path.split( self.csv )
-    for item in os.listdir( fdir ):
-      if fname in item:
+        # if file open, close it
+        if self._fid:
+            self._fid.close()
+
+        fpath = f"{self.csv}.{self._date:%Y-%m-%d}"
+        self._fid = open(fpath, mode="a", buffering=1)
         try:
-          date = datetime.strptime( item.split(".")[-1], "%Y-%m-%d" )
-        except:
-          continue
-        if (self._date - date).days > self._backup:
-          os.remove( os.path.join( fdir, item ) )
+            os.remove(self.csv)
+        except Exception:
+            pass
+        os.link(fpath, self.csv)
 
-  def _rotateFile(self):
-    date = datetime.now()
-    if date.date() != self._date.date():
-      self._removeOld()
-      self._initFile()
-      self._date = date
-    
-  def _writeData(self, date, *args):
+    def _removeOld(self):
 
-    self._rotateFile()
-    self._fid.write( date.strftime("%Y-%m-%d %H:%M:%S.%f,") )
-    self._fid.write( ",".join( [str(i).strip() for i in args] ) )
-    self._fid.write( os.linesep ) 
+        fdir, fname = os.path.split(self.csv)
+        for item in os.listdir(fdir):
+            if fname in item:
+                try:
+                    date = datetime.strptime(
+                        item.split(".")[-1],
+                        "%Y-%m-%d",
+                    )
+                except Exception:
+                    continue
+                if (self._date - date).days > self._backup:
+                    os.remove(
+                        os.path.join(fdir, item)
+                    )
 
-  def write(self, *args ):
+    def _rotateFile(self):
+        date = datetime.now()
+        if date.date() != self._date.date():
+            self._removeOld()
+            self._initFile()
+            self._date = date
 
-    if not self._closed:
-      self._QUEUE.put( (datetime.now(), ) + args )
+    def _writeData(self, date, *args):
 
-  def run(self):
+        self._rotateFile()
+        self._fid.write(
+            date.strftime("%Y-%m-%d %H:%M:%S.%f,")
+        )
+        self._fid.write(
+            ",".join(
+                [str(i).strip() for i in args]
+            )
+        )
+        self._fid.write(os.linesep)
 
-    self._date = datetime.now()
-    self._initFile()
+    def write(self, *args):
 
-    while True:
-      try:
-        data = self._QUEUE.get( 1.0 )
-      except:
-        continue
-      else:
-        self._QUEUE.task_done()
+        if not self._closed:
+            self._QUEUE.put(
+                (datetime.now(),) + args
+            )
 
-      if data is None: break 
-      self._writeData( *data )
+    def run(self):
 
-    self._fid.close()
+        self._date = datetime.now()
+        self._initFile()
 
-    while not self._QUEUE.empty():
-      _ = self._QUEUE.get()
-      self._QUEUE.task_done()
-    
-  def close( self ):
+        while True:
+            try:
+                data = self._QUEUE.get(1.0)
+            except Exception:
+                continue
+            else:
+                self._QUEUE.task_done()
 
-    self._closed = True
-    self._QUEUE.put(None)
+            if data is None:
+                break
+            self._writeData(*data)
 
+        self._fid.close()
+
+        while not self._QUEUE.empty():
+            _ = self._QUEUE.get()
+            self._QUEUE.task_done()
+
+    def close(self):
+
+        self._closed = True
+        self._QUEUE.put(None)

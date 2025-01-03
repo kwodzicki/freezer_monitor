@@ -30,7 +30,7 @@ class SSD1306(Thread):
         timeout: int | float = 30.0,
         ncycles: int | None = None,
         showIP: bool = False,
-        i2c = None,
+        i2c=None,
     ):
         super().__init__()
 
@@ -64,7 +64,7 @@ class SSD1306(Thread):
         else:
             self.cycle_time = timeout
 
-        # Initialize display button object for turn on/off display 
+        # Initialize display button object for turn on/off display
         self.buttonThread = DisplayButton(self._displayOn, timeout)
 
         self._displayThread = None
@@ -111,7 +111,7 @@ class SSD1306(Thread):
         """Update information in the image that is drawn on screen"""
 
         self.__log.debug("Updating the display")
-        
+
         txt = sensor.display_text()
         if len(txt) < 2:
             self.__log.error("Too few lines to display!")
@@ -189,7 +189,7 @@ class SSD1306(Thread):
                 if len(self.sensors) == 0:
                     continue
                 needsClear = True  # Set needsClear to be True
-                self.update(self.sensors[idx])  # Update the image to draw to screen
+                self.update(self.sensors[idx])  # Update the image on screen
                 self.draw()  # Draw to the screen
                 idx = (idx + 1) % len(self.sensors)
 

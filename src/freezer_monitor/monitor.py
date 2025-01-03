@@ -8,16 +8,9 @@
 # not support PIL/pillow (python imaging library)!
 import logging
 
-import os
-import signal
-import time
-from datetime import datetime
-
-from subprocess import check_output
-
 from adafruit_tca9548a import TCA9548A
 
-from . import DATADIR, DEFAULT_INTERVAL, STOP_EVENT, I2C_LOCK, I2C
+from . import STOP_EVENT, I2C
 from .display import SSD1306
 from .sensors import sht30
 
@@ -52,7 +45,8 @@ def main(**kwargs):
     # display = SSD1306(sensors)
 
     log.info("Waiting for stop event")
-    # Wait for event, delay is computed in function and we want event to be NOT set 
+    # Wait for event, delay is computed in function and we want event
+    # to be NOT set
     _ = STOP_EVENT.wait()
 
     log.info("Waiting for sensor thread(s) to close")
@@ -63,7 +57,7 @@ def main(**kwargs):
     if display:
         display.join()  # Join display thread
 
-    log.debug( "Monitor thread dead!" )
+    log.debug("Monitor thread dead!")
 
 
 def muxer_device_on_channel(muxer: TCA9548A, dev_address: int) -> list[int]:
@@ -90,7 +84,7 @@ def muxer_device_on_channel(muxer: TCA9548A, dev_address: int) -> list[int]:
         addresses = [
             address
             for address in muxer[channel].scan()
-            if address != muxer.address 
+            if address != muxer.address
         ]
         muxer[channel].unlock()
         if len(addresses) == 0:

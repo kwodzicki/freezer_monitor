@@ -85,9 +85,9 @@ class SHT30(BaseSensor):
 
         temp, rh = self.poll()
         return [
-            self.name, 
-            f"T : {temp:6.1f} C", 
-        ] 
+            self.name,
+            f"T : {temp:6.1f} C",
+        ]
 
     def run(self):
         """Run in thread for polling sensor"""

@@ -7,11 +7,12 @@ from . import STOP_EVENT, lfile
 from . import monitor
 
 
-def kill( *args, **kwargs ):
-  print( "setting STOP_EVENT" )
-  STOP_EVENT.set()
+def kill(*args, **kwargs):
+    print("setting STOP_EVENT")
+    STOP_EVENT.set()
 
-def checkMinMax( val, flag ):
+
+def checkMinMax(val, flag):
     if val is None or isinstance(val, (int, float)):
         return val
 
@@ -20,11 +21,12 @@ def checkMinMax( val, flag ):
             return None
         try:
             return float(val)
-        except:
-            print( f"Must input `None' or float value for --{flag}" )
+        except Exception:
+            print(f"Must input `None' or float value for --{flag}")
             exit()
 
-    raise Exception( "Expected str input")
+    raise Exception("Expected str input")
+
 
 def main():
 
@@ -76,10 +78,10 @@ def main():
     signal.signal(signal.SIGTERM, kill)
 
     lfile.setLevel(args.loglevel)
-    inst = monitor.main(
+    _ = monitor.main(
             maxThres=maxThres,
             minThres=minThres,
-            interval=args.interval, 
-            showIP=args.show_ip, 
-            no_socket=args.no_socket
+            interval=args.interval,
+            showIP=args.show_ip,
+            no_socket=args.no_socket,
     )
