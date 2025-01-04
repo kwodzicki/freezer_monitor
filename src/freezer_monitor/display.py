@@ -1,5 +1,4 @@
 import logging
-import time
 
 from threading import Thread, Timer, Lock, Event
 from subprocess import check_output
@@ -232,7 +231,6 @@ class DisplayButton(Thread):
                 self.timer.cancel()
             self.timer = Timer(self.timeout, self.event.clear)
             self.timer.start()
-            time.sleep(0.2)  # Quick sleep to prevent multiple very-fast clicks
 
         if self.timer:
             self.timer.cancel()
