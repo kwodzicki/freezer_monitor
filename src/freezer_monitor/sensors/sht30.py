@@ -86,6 +86,13 @@ class SHT30(BaseSensor):
         return t, rh  # Return the temperature and RH
 
     def display_text(self) -> list[str]:
+        """
+        Builds lines to display on screen
+
+        Returns list of strings where each string is a new line to display
+        on the screen
+
+        """
 
         temp, rh = self.poll()
         return [
@@ -130,9 +137,15 @@ class SHT30(BaseSensor):
             avg = numpy.nanmean(self.t_30min_avg)
             if not numpy.isfinite(avg):  # If is not finite
                 self.allNaN()  # AllNaN email
-            elif avg > self.max_thres:
+            elif (
+                isinstance(self.max_thres, (int, float))
+                and avg > self.max_thres
+            ):
                 self.overTemp(temp, rh)  # Over temp email
-            elif avg < self.min_thres:
+            elif (
+                isinstance(self.min_thres, (int, float))
+                and avg < self.min_thres
+            ):
                 self.underTemp(temp, rh)  # Under temp email
 
         # If heater timer thread exists, cancel it

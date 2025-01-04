@@ -24,6 +24,7 @@ class SSD1306(Thread):
     IP = ["hostname", "-I"]
     FONT = "DejaVuSansMono"
     BRIGHTNESS = 200
+    ADDRESS = 0x3c
 
     def __init__(
         self,
@@ -81,6 +82,7 @@ class SSD1306(Thread):
             self.width,
             self.height,
             i2c,
+            addr=self.ADDRESS,
         )
 
         # Create blank image for fdrawing.
