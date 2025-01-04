@@ -1,0 +1,36 @@
+[build-system]
+requires = [
+    "setuptools>=61.0",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "freezer_monitor"
+description = "Package for monitoring temperature in freezer"
+version = "0.3.0"
+authors = [
+    {name = "Kyle R. Wodzicki", email = "krwodzicki@gmail.com"},
+]
+dependencies = [
+    "numpy", 
+    "matplotlib",
+    "Pillow",
+    "pyYAML",  
+    "gpiozero",
+    "lgpio", 
+    "adafruit-circuitpython-ssd1306",
+    "adafruit-circuitpython-sht31d",
+    "adafruit-circuitpython-tca9548a",
+]
+
+[project.urls]
+Repository = "https://github.com/kwodzicki/freezer_monitor"
+
+[project.scripts]
+freezerMonitor = "freezer_monitor.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"*" = ["*.yml"]
