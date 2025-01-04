@@ -18,6 +18,9 @@ import adafruit_sht31d
 from .. import STOP_EVENT, I2C_LOCK
 from .basesensor import BaseSensor
 
+# Minimum number of polls to run before NaN check is done
+MIN_NUM_POLL = 10
+
 
 class SHT30(BaseSensor):
 
@@ -54,6 +57,7 @@ class SHT30(BaseSensor):
 
         self.websocket = None
 
+        self.nn = 0  # Counter for times polled
         self.t_30min_avg = numpy.full(
             int(30 * 60 / self.interval),
             numpy.nan,
@@ -63,6 +67,7 @@ class SHT30(BaseSensor):
     def poll(self):
         """Poll the sensor for temperature and humidity"""
 
+        self.nn += 1
         t = rh = numpy.nan
         with I2C_LOCK:  # Get I2C lock for thread safety
             try:  # Try to get information from temperature sensor
@@ -135,7 +140,8 @@ class SHT30(BaseSensor):
 
             # Compute average temperature
             avg = numpy.nanmean(self.t_30min_avg)
-            if not numpy.isfinite(avg):  # If is not finite
+            # If polled enough times AND average is not finite
+            if self.nn > MIN_NUM_POLL and not numpy.isfinite(avg):
                 self.allNaN()  # AllNaN email
             elif (
                 isinstance(self.max_thres, (int, float))
