@@ -7,10 +7,9 @@
 # Adafruit Blinka to support CircuitPython libraries. CircuitPython does
 # not support PIL/pillow (python imaging library)!
 import logging
-
 import time
 
-from threading import Timer
+from threading import Timer, Lock
 
 import numpy
 import adafruit_sht31d
@@ -21,8 +20,130 @@ from .basesensor import BaseSensor
 # Minimum number of polls to run before NaN check is done
 MIN_NUM_POLL = 10
 
+DEFAULT_UNIT = 'degC'
 
-class SHT30(BaseSensor):
+DEG_F = [
+    'degree_Fahrenheit',
+    'fahrenheit',
+    'degF',
+    'degreeF',
+]
+
+DEG_C = [
+    'degree_Celsius',
+    'celsius',
+    'degC',
+    'degreeC',
+]
+
+
+class BaseSHT(BaseSensor):
+    """
+    Base class for SHT-type sensors
+
+    """
+
+    HEATER_LOCK = Lock()
+
+    def __init__(
+        self,
+        name: str,
+        max_thres: int = -10,
+        min_thres: int | None = None,
+        units: str | None = None,
+        **kwargs,
+    ):
+        """
+        Arguments:
+            name (str) : Name assigned to the sensor. This should be a kind
+                of description about the senors; e.g., location/what it is
+                monitoring
+
+        Keyword arguments:
+            max_thres (int,float) : Temperature threshold (degree C) to
+                trigger warning; if temperature exceeds this value, warning
+                sent. Setting this will override the min_thres keyword
+            min_thres (int,float) : Temperature threshold (degree C) to
+                trigger warning; if temperature is below this value, warning
+                sent. This keyword is ignored if the max_thres keyword is set.
+            **kwargs: See BaseSensor
+
+        """
+
+        super().__init__(name, **kwargs)
+
+        self.__log = logging.getLogger(__name__)
+        self.__log.setLevel(logging.DEBUG)
+
+        self.sensor = None
+
+        self.units = units or DEFAULT_UNIT
+        if self.units not in DEG_C and self.units not in DEG_F:
+            self.__log.error(
+                "Unsupported unit '%s', defaulting to '%s'",
+                self.units,
+                DEFAULT_UNIT,
+            )
+            self.units = DEFAULT_UNIT
+
+        self.__log.debug("Temperature units set to '%s'", self.units)
+
+        self.min_thres = min_thres
+        self.max_thres = max_thres
+
+    def _toggle_heater(self, state):
+        """Toggle sensor heater state"""
+
+        with I2C_LOCK:  # Grab I2C lock for thread safety
+            try:  # Try to set the heater state
+                self.sensor.heater = state
+            except Exception as err:  # On exception, log the a warning
+                self.__log.warning(
+                    "%s - Failed to toggle heater : %s",
+                    self.name,
+                    err,
+                )
+            else:  # Else, some debug logging
+                self.__log.debug(
+                    "%s - Heater state set to : %s",
+                    self.name,
+                    state,
+                )
+
+    def run_heater(self, duration=10.0, interval=1800.0):
+        """
+        Run the heater for specified number of seconds
+
+        Keyword arguments:
+            duration (int,float) : Duration (in seconds) to run heater for
+            interval (int,float) : Interval to wait (in seconds) before next
+                call to this method. Default is 30 minutes
+
+        """
+
+        # Grab lock so that multiple heaters don't run at same time
+        with self.HEATER_LOCK:
+            self._toggle_heater(True)
+            # Wait for STOP_EVENT; if it happens, just return, else,
+            # continue function
+            if STOP_EVENT.wait(duration):
+                return
+            self._toggle_heater(False)
+
+        # Initialize and start another timer thread for the heater
+        self._heater_timer = Timer(interval, self.run_heater)
+        self._heater_timer.start()
+
+    def poll(self):
+
+        pass
+
+
+class SHT30(BaseSHT):
+    """
+    Class for the SHT30 Temperature and Humidity Sensor
+
+    """
 
     def __init__(
         self,
@@ -78,6 +199,9 @@ class SHT30(BaseSensor):
                     self.name,
                     err,
                 )
+            else:
+                if self.units in DEG_F:
+                    t = t * 9/5 + 32
 
             try:  # Try to get information from RH sensor
                 rh = self.sensor.relative_humidity
@@ -100,9 +224,10 @@ class SHT30(BaseSensor):
         """
 
         temp, rh = self.poll()
+        unit = 'C' if self.units in DEG_C else 'F'
         return [
             self.name,
-            f"T : {temp:6.1f} C",
+            f"T : {temp:6.1f} {unit}",
         ]
 
     def run(self):
@@ -121,7 +246,10 @@ class SHT30(BaseSensor):
             temp, rh = self.poll()  # Get temperature and humidity
 
             # Write data to the csv file
-            self.data_log.write(f"{temp:6.1f}", f"{rh:6.1f}")
+            self.data_log.write(
+                f"{temp:6.1f} {self.units}",
+                f"{rh:6.1f} %",
+            )
 
             if self.websocket:
                 self.websocekt.write(

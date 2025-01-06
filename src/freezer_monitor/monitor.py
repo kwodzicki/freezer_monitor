@@ -16,7 +16,7 @@ from adafruit_tca9548a import TCA9548A
 from . import STOP_EVENT
 from .utils import load_settings
 from .display import SSD1306
-from .sensors.sht30 import SHT30
+from .sensors.sht import SHT30
 
 
 def main(**kwargs):
@@ -38,7 +38,7 @@ def main(**kwargs):
         ch_settings['name'] = (
             ch_settings.pop('name', f"Device{channel}")
         )
-        sensor = SHT30(muxer[channel], **ch_settings, **kwargs)
+        sensor = SHT30(muxer[channel], **ch_settings, **settings, **kwargs)
         sensor.start()
         sensors.append(sensor)
 
