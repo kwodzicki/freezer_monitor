@@ -41,6 +41,7 @@ def main(**kwargs):
         sensor = SHT30(muxer[channel], **ch_settings, **settings, **kwargs)
         sensor.start()
         sensors.append(sensor)
+    log.info("Found %d sensors", len(sensors))
 
     log.info("Loading display")
     # Initialize display

@@ -8,7 +8,7 @@ from gpiozero import Button
 
 import adafruit_ssd1306
 
-from . import STOP_EVENT, I2C_LOCK
+from . import STOP_EVENT, I2C_LOCK, LOCK_TIMEOUT
 
 NCYCLES = 3  # Number of times to cycle through all sensors
 TIMEOUT = 60.0  # Timeout (in seconds) for display to turn off
@@ -159,12 +159,17 @@ class SSD1306(Thread):
     def draw(self):
         """Thread safe way to draw image on screen"""
 
-        with I2C_LOCK:  # Get I2C lock for thread safety
-            try:
-                self._display.image(self._image)  # Write image data to screen
-                self._display.show()  # Refresh the screen
-            except Exception as err:
-                self.__log.error("Failed to update display : %s", err)
+        # Get I2C lock for thread safety
+        if not I2C_LOCK.acquire(timeout=LOCK_TIMEOUT):
+            self.__log.warning("Failed to acquire lock, display not updated!")
+            return
+
+        try:
+            self._display.image(self._image)  # Write image data to screen
+            self._display.show()  # Refresh the screen
+        except Exception as err:
+            self.__log.error("Failed to update display : %s", err)
+        I2C_LOCK.release()
 
     def clear(self):
         """Clear the display; turn off all pixels"""

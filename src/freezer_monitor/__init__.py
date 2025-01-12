@@ -29,3 +29,4 @@ LOG.addHandler(lfile)
 DEFAULT_INTERVAL = 10.0  # Sensor polling interval
 STOP_EVENT = Event()
 I2C_LOCK = Lock()
+LOCK_TIMEOUT = 1.0

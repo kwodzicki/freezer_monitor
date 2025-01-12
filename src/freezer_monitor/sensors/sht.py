@@ -14,7 +14,7 @@ from threading import Timer, Lock
 import numpy
 import adafruit_sht31d
 
-from .. import STOP_EVENT, I2C_LOCK
+from .. import STOP_EVENT, I2C_LOCK, LOCK_TIMEOUT
 from .basesensor import BaseSensor
 
 # Minimum number of polls to run before NaN check is done
@@ -94,21 +94,29 @@ class BaseSHT(BaseSensor):
     def _toggle_heater(self, state):
         """Toggle sensor heater state"""
 
-        with I2C_LOCK:  # Grab I2C lock for thread safety
-            try:  # Try to set the heater state
-                self.sensor.heater = state
-            except Exception as err:  # On exception, log the a warning
-                self.__log.warning(
-                    "%s - Failed to toggle heater : %s",
-                    self.name,
-                    err,
-                )
-            else:  # Else, some debug logging
-                self.__log.debug(
-                    "%s - Heater state set to : %s",
-                    self.name,
-                    state,
-                )
+        # Grab I2C lock for thread safety
+        if not I2C_LOCK.acquire(timeout=LOCK_TIMEOUT):
+            self.__log.warning(
+                "%s - Failed to acquire lock, could not toggle heater!",
+                self.name,
+            )
+            return
+
+        try:  # Try to set the heater state
+            self.sensor.heater = state
+        except Exception as err:  # On exception, log the a warning
+            self.__log.warning(
+                "%s - Failed to toggle heater : %s",
+                self.name,
+                err,
+            )
+        else:  # Else, some debug logging
+            self.__log.debug(
+                "%s - Heater state set to : %s",
+                self.name,
+                state,
+            )
+        I2C_LOCK.release()
 
     def run_heater(self, duration=10.0, interval=1800.0):
         """
@@ -124,15 +132,13 @@ class BaseSHT(BaseSensor):
         # Grab lock so that multiple heaters don't run at same time
         with self.HEATER_LOCK:
             self._toggle_heater(True)
-            # Wait for STOP_EVENT; if it happens, just return, else,
-            # continue function
-            if STOP_EVENT.wait(duration):
-                return
+            _ = STOP_EVENT.wait(duration)
             self._toggle_heater(False)
 
         # Initialize and start another timer thread for the heater
-        self._heater_timer = Timer(interval, self.run_heater)
-        self._heater_timer.start()
+        if not STOP_EVENT.is_set():
+            self._heater_timer = Timer(interval, self.run_heater)
+            self._heater_timer.start()
 
     def poll(self):
 
@@ -188,30 +194,38 @@ class SHT30(BaseSHT):
     def poll(self):
         """Poll the sensor for temperature and humidity"""
 
-        self.nn += 1
         t = rh = numpy.nan
-        with I2C_LOCK:  # Get I2C lock for thread safety
-            try:  # Try to get information from temperature sensor
-                t = self.sensor.temperature
-            except Exception as err:
-                self.__log.error(
-                    "%s - Failed to get temperature from sensor : %s",
-                    self.name,
-                    err,
-                )
-            else:
-                if self.units in DEG_F:
-                    t = t * 9/5 + 32
+        # Get I2C lock for thread safety
+        if not I2C_LOCK.acquire(timeout=LOCK_TIMEOUT):
+            self.__log.warning(
+                "%s - Failed to acquire lock, could not poll sensor!",
+                self.name,
+            )
+            return t, rh
 
-            try:  # Try to get information from RH sensor
-                rh = self.sensor.relative_humidity
-            except Exception as err:
-                self.__log.error(
-                    "%s - Failed to get relative humidity from sensor : %s",
-                    self.name,
-                    err,
-                )
+        self.nn += 1
+        try:  # Try to get information from temperature sensor
+            t = self.sensor.temperature
+        except Exception as err:
+            self.__log.error(
+                "%s - Failed to get temperature from sensor : %s",
+                self.name,
+                err,
+            )
+        else:
+            if self.units in DEG_F:
+                t = t * 9/5 + 32
 
+        try:  # Try to get information from RH sensor
+            rh = self.sensor.relative_humidity
+        except Exception as err:
+            self.__log.error(
+                "%s - Failed to get relative humidity from sensor : %s",
+                self.name,
+                err,
+            )
+
+        I2C_LOCK.release()
         return t, rh  # Return the temperature and RH
 
     def display_text(self) -> list[str]:
@@ -262,14 +276,15 @@ class SHT30(BaseSHT):
             self.t_30min_avg = numpy.roll(self.t_30min_avg, -1)
             self.t_30min_avg[-1] = temp
 
-            # If no max thres is set, then just continue
-            if not isinstance(self.max_thres, (int, float)):
+            # If not enough polss, then continue
+            if self.nn < MIN_NUM_POLL:
                 continue
 
             # Compute average temperature
             avg = numpy.nanmean(self.t_30min_avg)
+
             # If polled enough times AND average is not finite
-            if self.nn > MIN_NUM_POLL and not numpy.isfinite(avg):
+            if not numpy.isfinite(avg):
                 self.allNaN()  # AllNaN email
             elif (
                 isinstance(self.max_thres, (int, float))
