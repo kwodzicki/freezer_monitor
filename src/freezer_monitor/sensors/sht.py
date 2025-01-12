@@ -9,7 +9,7 @@
 import logging
 import time
 
-from threading import Timer, Lock
+from threading import Timer, Event, Lock
 
 import numpy
 import adafruit_sht31d
@@ -151,6 +151,8 @@ class SHT30(BaseSHT):
 
     """
 
+    ADDRESS = 0x44
+
     def __init__(
         self,
         i2c_bus,
@@ -180,9 +182,10 @@ class SHT30(BaseSHT):
         self.__log = logging.getLogger(__name__)
         self.__log.setLevel(logging.DEBUG)
 
-        self.sensor = adafruit_sht31d.SHT31D(i2c_bus)
+        self.__stop = Event()
 
         self.websocket = None
+        self.sensor = adafruit_sht31d.SHT31D(i2c_bus, address=self.ADDRESS)
 
         self.nn = 0  # Counter for times polled
         self.t_30min_avg = numpy.full(
@@ -190,6 +193,13 @@ class SHT30(BaseSHT):
             numpy.nan,
             dtype=numpy.float32,
         )
+
+    @property
+    def status(self) -> int:
+        try:
+            return self.sensor.status
+        except Exception:
+            return None
 
     def poll(self):
         """Poll the sensor for temperature and humidity"""
@@ -254,7 +264,7 @@ class SHT30(BaseSHT):
         t0 = 0.0
         # Wait for event, delay is computed in function and we want event to
         # be NOT set
-        while not STOP_EVENT.wait(self.delay(t0)):
+        while not self.__stop.is_set() and not STOP_EVENT.wait(self.delay(t0)):
             # Get current monotonic time; used to compute delay until next poll
             t0 = time.monotonic()
             temp, rh = self.poll()  # Get temperature and humidity
@@ -308,3 +318,7 @@ class SHT30(BaseSHT):
         self.data_log.join()
 
         self.__log.debug("Sensor '%s' thread dead!", self.name)
+
+    def stop(self):
+
+        self.__stop.set()

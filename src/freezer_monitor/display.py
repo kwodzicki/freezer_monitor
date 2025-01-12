@@ -67,6 +67,8 @@ class SSD1306(Thread):
         else:
             self.cycle_time = timeout
 
+        self.ncycles = ncycles
+
         # Initialize display button object for turn on/off display
         self.buttonThread = DisplayButton(self._displayOn, timeout)
 
@@ -192,15 +194,22 @@ class SSD1306(Thread):
 
         needsClear = False  # Dose the screen need to be cleared
         while not STOP_EVENT.is_set():  # While stop event is NOT set
-            idx = 0  # index into self.sensors to display
             # Wait for displayOn event; is false if not set within timeout
+            sensor_gen = self.sensors.cycle_thru(self.ncycles)
             while self._displayOn.wait(timeout=1):
-                if len(self.sensors) == 0:
-                    continue
                 needsClear = True  # Set needsClear to be True
-                self.update(self.sensors[idx])  # Update the image on screen
+                try:
+                    sensor = next(sensor_gen)
+                except Exception:
+                    self._draw.text(
+                        [0, self.padding],
+                        "NO SENSORS!!!",
+                        font=self.font,
+                        fill=self.BRIGHTNESS,
+                    )  # Draw temperature data to image
+                else:
+                    self.update(sensor)  # Update the image on screen
                 self.draw()  # Draw to the screen
-                idx = (idx + 1) % len(self.sensors)
 
                 # Wait for cycle_time for STOP_EVENT to be set. If set within
                 # timeout, then break out of loop
