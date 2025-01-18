@@ -10,22 +10,18 @@ import logging
 import os
 import time
 
-from threading import Thread, Timer, Lock
+from threading import Thread
 
-from .. import DATADIR, DEFAULT_INTERVAL, STOP_EVENT, I2C_LOCK
+from .. import DATADIR, DEFAULT_INTERVAL
 from ..timerotatingcsv import DailyRotatingCSV
 from ..emailer import EMailer
 
 
 class BaseSensor(EMailer, Thread):
 
-    HEATER_LOCK = Lock()
-
     def __init__(
         self,
         name: str,
-        max_thres: int = -10,
-        min_thres: int | None = None,
         interval: int | float = DEFAULT_INTERVAL,
         no_socket: bool = False,
         **kwargs,
@@ -60,30 +56,9 @@ class BaseSensor(EMailer, Thread):
         self.name = name
         self.interval = interval
 
-        self.min_thres = min_thres
-        self.max_thres = max_thres
         self.data_log = DailyRotatingCSV(
             os.path.join(DATADIR, f"{name}.csv"),
         )
-
-    def _toggle_heater(self, state):
-        """Toggle sensor heater state"""
-
-        with I2C_LOCK:  # Grab I2C lock for thread safety
-            try:  # Try to set the heater state
-                self.sensor.heater = state
-            except Exception as err:  # On exception, log the a warning
-                self.__log.warning(
-                    "%s - Failed to toggle heater : %s",
-                    self.name,
-                    err,
-                )
-            else:  # Else, some debug logging
-                self.__log.debug(
-                    "%s - Heater state set to : %s",
-                    self.name,
-                    state,
-                )
 
     def delay(self, t0):
         """
@@ -100,30 +75,6 @@ class BaseSensor(EMailer, Thread):
         if dt < 0.0:  # If the delay is less than zero (0.0), then return zero
             return 0.0
         return dt  # Return dt
-
-    def run_heater(self, duration=10.0, interval=1800.0):
-        """
-        Run the heater for specified number of seconds
-
-        Keyword arguments:
-            duration (int,float) : Duration (in seconds) to run heater for
-            interval (int,float) : Interval to wait (in seconds) before next
-                call to this method. Default is 30 minutes
-
-        """
-
-        # Grab lock so that multiple heaters don't run at same time
-        with self.HEATER_LOCK:
-            self._toggle_heater(True)
-            # Wait for STOP_EVENT; if it happens, just return, else,
-            # continue function
-            if STOP_EVENT.wait(duration):
-                return
-            self._toggle_heater(False)
-
-        # Initialize and start another timer thread for the heater
-        self._heater_timer = Timer(interval, self.run_heater)
-        self._heater_timer.start()
 
     def display_text(self) -> list[str]:
         """

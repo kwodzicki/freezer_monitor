@@ -8,7 +8,7 @@ from gpiozero import Button
 
 import adafruit_ssd1306
 
-from . import STOP_EVENT, I2C_LOCK
+from . import STOP_EVENT, I2C_LOCK, LOCK_TIMEOUT
 
 NCYCLES = 3  # Number of times to cycle through all sensors
 TIMEOUT = 60.0  # Timeout (in seconds) for display to turn off
@@ -66,6 +66,8 @@ class SSD1306(Thread):
             timeout = self.cycle_time * ncycles * nsensors
         else:
             self.cycle_time = timeout
+
+        self.ncycles = ncycles
 
         # Initialize display button object for turn on/off display
         self.buttonThread = DisplayButton(self._displayOn, timeout)
@@ -159,12 +161,17 @@ class SSD1306(Thread):
     def draw(self):
         """Thread safe way to draw image on screen"""
 
-        with I2C_LOCK:  # Get I2C lock for thread safety
-            try:
-                self._display.image(self._image)  # Write image data to screen
-                self._display.show()  # Refresh the screen
-            except Exception as err:
-                self.__log.error("Failed to update display : %s", err)
+        # Get I2C lock for thread safety
+        if not I2C_LOCK.acquire(timeout=LOCK_TIMEOUT):
+            self.__log.warning("Failed to acquire lock, display not updated!")
+            return
+
+        try:
+            self._display.image(self._image)  # Write image data to screen
+            self._display.show()  # Refresh the screen
+        except Exception as err:
+            self.__log.error("Failed to update display : %s", err)
+        I2C_LOCK.release()
 
     def clear(self):
         """Clear the display; turn off all pixels"""
@@ -187,15 +194,22 @@ class SSD1306(Thread):
 
         needsClear = False  # Dose the screen need to be cleared
         while not STOP_EVENT.is_set():  # While stop event is NOT set
-            idx = 0  # index into self.sensors to display
             # Wait for displayOn event; is false if not set within timeout
+            sensor_gen = self.sensors.cycle_thru(self.ncycles)
             while self._displayOn.wait(timeout=1):
-                if len(self.sensors) == 0:
-                    continue
                 needsClear = True  # Set needsClear to be True
-                self.update(self.sensors[idx])  # Update the image on screen
+                try:
+                    sensor = next(sensor_gen)
+                except Exception:
+                    self._draw.text(
+                        [0, self.padding],
+                        "NO SENSORS!!!",
+                        font=self.font,
+                        fill=self.BRIGHTNESS,
+                    )  # Draw temperature data to image
+                else:
+                    self.update(sensor)  # Update the image on screen
                 self.draw()  # Draw to the screen
-                idx = (idx + 1) % len(self.sensors)
 
                 # Wait for cycle_time for STOP_EVENT to be set. If set within
                 # timeout, then break out of loop
