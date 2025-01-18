@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "freezer_monitor"
 description = "Package for monitoring temperature in freezer"
-version = "0.5.0"
+version = "0.5.1"
 authors = [
     {name = "Kyle R. Wodzicki", email = "krwodzicki@gmail.com"},
 ]

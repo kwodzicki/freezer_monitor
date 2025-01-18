@@ -63,7 +63,6 @@ class EMailer:
 
         return (self.send_to is not None) and (self.send_from is not None)
 
-    @threaded
     @locked
     def allNaN(self):
         """Send email for all NaN slice encountered!"""
@@ -84,7 +83,6 @@ class EMailer:
         self.sendMail(subject, content)
         self.__allNaN = time.monotonic()
 
-    @threaded
     @locked
     def overTemp(self, temp, rh):
         """Send email for over temperature threshold!"""
@@ -110,7 +108,6 @@ class EMailer:
         self.sendMail(subject, content)
         self.__overTemp = time.monotonic()
 
-    @threaded
     @locked
     def underTemp(self, temp, rh):
         """Send email for under temperature threshold!"""
@@ -139,7 +136,7 @@ class EMailer:
 
     def sendMail(self, subject, content):
 
-        self.__log.debug("Sending email")
+        self.__log.debug("%s - Sending email", self.name)
         msg = EmailMessage()
         msg["From"] = self.send_from["user"]
         msg["To"] = self.send_to
