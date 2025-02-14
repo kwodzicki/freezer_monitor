@@ -75,6 +75,8 @@ class BaseSHT(BaseSensor):
         self.__log = logging.getLogger(__name__)
         self.__log.setLevel(logging.DEBUG)
 
+        self._remove = Event()
+
         self.sensor = None
 
         self.units = units or DEFAULT_UNIT
@@ -144,6 +146,10 @@ class BaseSHT(BaseSensor):
 
         pass
 
+    def remove(self):
+
+        self._remove.set()
+
 
 class SHT30(BaseSHT):
     """
@@ -181,8 +187,6 @@ class SHT30(BaseSHT):
 
         self.__log = logging.getLogger(__name__)
         self.__log.setLevel(logging.DEBUG)
-
-        self.__remove = Event()
 
         self.websocket = None
         self.sensor = adafruit_sht31d.SHT31D(i2c_bus, address=self.ADDRESS)
@@ -274,7 +278,7 @@ class SHT30(BaseSHT):
         # Wait for event, delay is computed in function and we want event to
         # be NOT set
         while (
-            not self.__remove.is_set()
+            not self._remove.is_set()
             and not STOP_EVENT.wait(self.delay(t0))
         ):
             # Get current monotonic time; used to compute delay until next poll
@@ -330,7 +334,3 @@ class SHT30(BaseSHT):
         self.data_log.join()
 
         self.__log.debug("Sensor '%s' thread dead!", self.name)
-
-    def remove(self):
-
-        self.__remove.set()
