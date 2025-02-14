@@ -17,7 +17,7 @@ SETTINGS_FILE = os.path.join(HOME, f"{__name__}.yml")
 lfile = RotatingFileHandler(lfile, maxBytes=2**20, backupCount=5)
 lfile.setFormatter(
     logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(message)s",
+        "%(asctime)s [%(levelname)s] {%(name)s.%(funcName)s} %(message)s",
     ),
 )
 lfile.setLevel(logging.WARNING)

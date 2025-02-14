@@ -1,12 +1,14 @@
 import logging
-from threading import Lock
+from threading import Timer, Lock
 
 from .. import LOCK_TIMEOUT
-from ..utils import load_settings, muxer_device_on_channel, RepeatedTimer
+from ..utils import load_settings, muxer_device_on_channel
+from ..emailer import EMailer
+
 from . import sht
 
 
-class Sensors:
+class Sensors(EMailer):
     """
     To hold all sensors and periodically scan
 
@@ -17,17 +19,14 @@ class Sensors:
     RESCAN = 10 * 60  # Rescan interval 10 minutes
 
     def __init__(self, muxer):
+        super().__init__()
 
         self.log = logging.getLogger(__name__)
+        self._rescan = None
         self._sensors = {}
 
         self.muxer = muxer
         self.scan_for_sensors()
-        self._rescanner = RepeatedTimer(
-            self.RESCAN,
-            self.scan_for_sensors,
-        )
-        self._rescanner.start()
 
     def __len__(self):
 
@@ -57,6 +56,10 @@ class Sensors:
 
         """
 
+        self.log.debug("Initializing new Timer object")
+        self._rescan = Timer(self.RESCAN, self.scan_for_sensors)
+        self._rescan.start()
+
         self.log.debug("Trying to scan for sensors")
 
         if not self.SCAN_LOCK.acquire(timeout=LOCK_TIMEOUT):
@@ -67,6 +70,8 @@ class Sensors:
             settings = load_settings()
         except Exception as err:
             self.log.info("Failed to load settings file: %s", err)
+            self.SCAN_LOCK.release()
+            self.log.debug('SCAN_LOCK released')
             return
 
         for key, info in settings.items():
@@ -75,18 +80,32 @@ class Sensors:
 
             name = info.get('name', '???')
 
-            if key in self._sensors and self._sensors[key].status is not None:
-                self.log.info(
-                    "%s - Sensor seems to be functioning properly",
+            sensor_obj = self._sensors.pop(key, None)
+
+            # If object is not none, then we will check the stats
+            if sensor_obj is not None:
+                # If status is NOT None, then assume okay
+                if sensor_obj.status is not None:
+                    self.log.info("%s - Assuming sensor is okay", name)
+                    self._sensors[key] = sensor_obj
+                    continue
+
+                # If made here, then statis IS None; i.e., failed to get
+                # status, and will try rescan to find device.
+                self.log.warning(
+                    "%s - Sensor NOT functioning properly. "
+                    "Stopping thread and waiting to close...",
                     name,
                 )
-                continue
+                sensor_obj.remove()
+                sensor_obj.join()
 
             _, channel, stype = key.split('.')  # Split information
             channel = int(channel)  # Convert channel number in to int
 
-            sensor = self.get_sensor_obj(stype)  # Try to get the sensor type
-            if sensor is None:
+            # Try to get the sensor type
+            sensor_cls = self.get_sensor_obj(stype)
+            if sensor_cls is None:
                 self.log.error(
                     "%s - No matching sensor type found: %s",
                     name,
@@ -98,48 +117,45 @@ class Sensors:
             # one (1) element if found
             channel = muxer_device_on_channel(
                 self.muxer,
-                sensor.ADDRESS,
+                sensor_cls.ADDRESS,
                 channel,
             )
             if len(channel) != 1:
-                if key in self._sensors:
-                    # If in sensors dict, but not on muxer (and failed status
-                    # check above), then we pop off list and ensure thread
-                    # is stopped
-                    msg = (
-                        "%s - Sensor not found on scan. Was it unplugged? "
-                        "Type: %s; Address: %d."
-                    )
-                    self._sensors.pop(key).stop()
-                else:
-                    # Else, we just didn't find it
-                    msg = (
-                        "%s - Failed to find sensor of type '%s' on "
-                        "address %d!"
-                    )
+                msg = (
+                    "%s - Failed to find sensor of type '%s' on "
+                    "address %d!"
+                )
                 self.log.warning(
                     msg,
                     name,
                     stype,
-                    sensor.ADDRESS,
+                    sensor_cls.ADDRESS,
                 )
                 continue
 
             # Initialize sensor, start the thread, and add to sensors dict
-            sensor = sensor(
+            sensor_obj = sensor_cls(
                 self.muxer[channel[0]],
                 **info,
             )
-            sensor.start()
-            self._sensors[key] = sensor
+            sensor_obj.start()
+            self._sensors[key] = sensor_obj
 
+        self.log.debug("Finished scanning")
+
+        if len(self._sensors) == 0:
+            self.sendMail(
+                "No Sensors!!!",
+                "No sensors found/connected! Check the system immediately!",
+            )
         self.SCAN_LOCK.release()
+        self.log.debug('SCAN_LOCK released')
 
     def join(self):
 
         with self.SCAN_LOCK:
             self.log.debug("Canceling rescan timer")
-            self._rescanner.stop()
+            self._rescan.cancel()
 
             self.log.debug("Joining sensor threads")
             for key in list(self._sensors.keys()):

@@ -14,7 +14,7 @@ from threading import Thread
 
 from .. import DATADIR, DEFAULT_INTERVAL
 from ..timerotatingcsv import DailyRotatingCSV
-from ..emailer import EMailer
+from . import EMailer
 
 
 class BaseSensor(EMailer, Thread):

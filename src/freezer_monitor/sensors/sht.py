@@ -182,7 +182,7 @@ class SHT30(BaseSHT):
         self.__log = logging.getLogger(__name__)
         self.__log.setLevel(logging.DEBUG)
 
-        self.__stop = Event()
+        self.__remove = Event()
 
         self.websocket = None
         self.sensor = adafruit_sht31d.SHT31D(i2c_bus, address=self.ADDRESS)
@@ -196,10 +196,19 @@ class SHT30(BaseSHT):
 
     @property
     def status(self) -> int:
+        if not I2C_LOCK.acquire(timeout=LOCK_TIMEOUT):
+            self.__log.warning(
+                "%s - Failed to aquire lock for status check!",
+                self.name,
+            )
+            return False
+
         try:
             return self.sensor.status
         except Exception:
             return None
+        finally:
+            I2C_LOCK.release()
 
     def poll(self):
         """Poll the sensor for temperature and humidity"""
@@ -264,7 +273,10 @@ class SHT30(BaseSHT):
         t0 = 0.0
         # Wait for event, delay is computed in function and we want event to
         # be NOT set
-        while not self.__stop.is_set() and not STOP_EVENT.wait(self.delay(t0)):
+        while (
+            not self.__remove.is_set()
+            and not STOP_EVENT.wait(self.delay(t0))
+        ):
             # Get current monotonic time; used to compute delay until next poll
             t0 = time.monotonic()
             temp, rh = self.poll()  # Get temperature and humidity
@@ -319,6 +331,6 @@ class SHT30(BaseSHT):
 
         self.__log.debug("Sensor '%s' thread dead!", self.name)
 
-    def stop(self):
+    def remove(self):
 
-        self.__stop.set()
+        self.__remove.set()
