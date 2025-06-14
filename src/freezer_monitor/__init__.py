@@ -2,7 +2,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 
 import os
-from threading import Event, Lock
+from threading import Event
 
 HOME = os.path.expanduser("~")
 APPDIR = os.path.join(HOME, "Freezer_Monitor")
@@ -17,7 +17,8 @@ SETTINGS_FILE = os.path.join(HOME, f"{__name__}.yml")
 lfile = RotatingFileHandler(lfile, maxBytes=2**20, backupCount=5)
 lfile.setFormatter(
     logging.Formatter(
-        "%(asctime)s [%(levelname)s] {%(name)s.%(funcName)s} %(message)s",
+        "%(asctime)s [%(levelname)s] "
+        "(%(thread)d) {%(name)s.%(funcName)s} %(message)s",
     ),
 )
 lfile.setLevel(logging.WARNING)
@@ -28,5 +29,3 @@ LOG.addHandler(lfile)
 
 DEFAULT_INTERVAL = 10.0  # Sensor polling interval
 STOP_EVENT = Event()
-I2C_LOCK = Lock()
-LOCK_TIMEOUT = 1.0

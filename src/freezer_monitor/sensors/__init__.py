@@ -1,8 +1,13 @@
 import logging
-from threading import Timer, Lock
+from threading import Timer
 
-from .. import LOCK_TIMEOUT
-from ..utils import load_settings, muxer_device_on_channel
+from ..utils import (
+    load_settings,
+    muxer_device_on_channel,
+    i2c_lock,
+    SCAN_LOCK,
+)
+
 from ..emailer import EMailer
 
 from . import sht
@@ -14,7 +19,6 @@ class Sensors(EMailer):
 
     """
 
-    SCAN_LOCK = Lock()
     AVAILABLE = [sht]
     RESCAN = 10 * 60  # Rescan interval 10 minutes
 
@@ -28,23 +32,24 @@ class Sensors(EMailer):
         self.muxer = muxer
         self.scan_for_sensors()
 
+    @i2c_lock(SCAN_LOCK)
     def __len__(self):
 
-        with self.SCAN_LOCK:
-            return len(self._sensors)
+        return len(self._sensors)
 
+    @i2c_lock(SCAN_LOCK)
     def __iter__(self):
 
-        if self.SCAN_LOCK:
-            return list(self._sensors.values())
+        return list(self._sensors.values())
 
+    @i2c_lock(SCAN_LOCK)
     def cycle_thru(self, ncycles):
 
-        with self.SCAN_LOCK:
-            for i in range(ncycles):
-                for sensor in self._sensors.values():
-                    yield sensor
+        for i in range(ncycles):
+            for sensor in self._sensors.values():
+                yield sensor
 
+    @i2c_lock(SCAN_LOCK)
     def scan_for_sensors(self):
         """
         Run scan for sensors
@@ -62,16 +67,10 @@ class Sensors(EMailer):
 
         self.log.debug("Trying to scan for sensors")
 
-        if not self.SCAN_LOCK.acquire(timeout=LOCK_TIMEOUT):
-            self.log.debug("Failed to grab lock for scan!")
-            return
-
         try:
             settings = load_settings()
         except Exception as err:
             self.log.info("Failed to load settings file: %s", err)
-            self.SCAN_LOCK.release()
-            self.log.debug('SCAN_LOCK released')
             return
 
         for key, info in settings.items():
@@ -148,20 +147,18 @@ class Sensors(EMailer):
                 "No Sensors!!!",
                 "No sensors found/connected! Check the system immediately!",
             )
-        self.SCAN_LOCK.release()
-        self.log.debug('SCAN_LOCK released')
 
+    @i2c_lock(SCAN_LOCK)
     def join(self):
 
-        with self.SCAN_LOCK:
-            self.log.debug("Canceling rescan timer")
-            self._rescan.cancel()
+        self.log.debug("Canceling rescan timer")
+        self._rescan.cancel()
 
-            self.log.debug("Joining sensor threads")
-            for key in list(self._sensors.keys()):
-                self._sensors.pop(key).join()
+        self.log.debug("Joining sensor threads")
+        for key in list(self._sensors.keys()):
+            self._sensors.pop(key).join()
 
-            self.log.debug("Sensors finished")
+        self.log.debug("Sensors finished")
 
     @classmethod
     def get_sensor_obj(cls, stype: str):

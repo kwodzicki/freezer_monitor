@@ -14,7 +14,8 @@ from threading import Timer, Event, Lock
 import numpy
 import adafruit_sht31d
 
-from .. import STOP_EVENT, I2C_LOCK, LOCK_TIMEOUT
+from .. import STOP_EVENT
+from ..utils import i2c_lock, I2C_LOCK
 from .basesensor import BaseSensor
 
 # Minimum number of polls to run before NaN check is done
@@ -93,16 +94,9 @@ class BaseSHT(BaseSensor):
         self.min_thres = min_thres
         self.max_thres = max_thres
 
+    @i2c_lock(I2C_LOCK)
     def _toggle_heater(self, state):
         """Toggle sensor heater state"""
-
-        # Grab I2C lock for thread safety
-        if not I2C_LOCK.acquire(timeout=LOCK_TIMEOUT):
-            self.__log.warning(
-                "%s - Failed to acquire lock, could not toggle heater!",
-                self.name,
-            )
-            return
 
         try:  # Try to set the heater state
             self.sensor.heater = state
@@ -118,7 +112,6 @@ class BaseSHT(BaseSensor):
                 self.name,
                 state,
             )
-        I2C_LOCK.release()
 
     def run_heater(self, duration=10.0, interval=1800.0):
         """
@@ -199,33 +192,19 @@ class SHT30(BaseSHT):
         )
 
     @property
+    @i2c_lock(I2C_LOCK)
     def status(self) -> int:
-        if not I2C_LOCK.acquire(timeout=LOCK_TIMEOUT):
-            self.__log.warning(
-                "%s - Failed to aquire lock for status check!",
-                self.name,
-            )
-            return False
-
         try:
             return self.sensor.status
         except Exception:
             return None
-        finally:
-            I2C_LOCK.release()
 
+    @i2c_lock(I2C_LOCK)
     def poll(self):
         """Poll the sensor for temperature and humidity"""
 
         t = rh = numpy.nan
         # Get I2C lock for thread safety
-        if not I2C_LOCK.acquire(timeout=LOCK_TIMEOUT):
-            self.__log.warning(
-                "%s - Failed to acquire lock, could not poll sensor!",
-                self.name,
-            )
-            return t, rh
-
         self.nn += 1
         try:  # Try to get information from temperature sensor
             t = self.sensor.temperature
@@ -248,7 +227,6 @@ class SHT30(BaseSHT):
                 err,
             )
 
-        I2C_LOCK.release()
         return t, rh  # Return the temperature and RH
 
     def display_text(self) -> list[str]:

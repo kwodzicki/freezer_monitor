@@ -1,10 +1,72 @@
 import logging
 import os
+from functools import wraps
+from threading import Lock
 
 import yaml
 from adafruit_tca9548a import TCA9548A
 
 from . import SETTINGS_FILE
+
+LOCK_TIMEOUT = 1.0
+
+
+class MyLock:
+
+    def __init__(self, name: str):
+        self._lock = Lock()
+        self._name = name
+
+    def __repr__(self):
+
+        return f"<{self._name}>"
+
+    def acquire(self, *args, **kwargs):
+        return self._lock.acquire(*args, **kwargs)
+
+    def release(self, *args, **kwargs):
+        # traceback.print_tb
+        return self._lock.release(*args, **kwargs)
+
+    def __enter__(self):
+        self.acquire()
+
+    def __exit__(self, type, value, traceback):
+        self.release()
+
+
+I2C_LOCK = MyLock('I2C_LOCK')
+SCAN_LOCK = MyLock('SCAN_LOCK')
+
+
+def i2c_lock(lock):
+    log = logging.getLogger(__name__)
+
+    def i2c_lock_decorator(func):
+
+        @wraps(func)
+        def wrapped(*args, **kwargs):
+            res = None
+
+            if not lock.acquire(timeout=LOCK_TIMEOUT):
+                log.warning(
+                    "Failed to acquire lock '%s', display not updated!",
+                    lock,
+                )
+                return res
+
+            log.log(5, "Acquired lock: %s", lock)
+            try:
+                res = func(*args, **kwargs)
+            except Exception as err:
+                log.exception("Failed to run function: %s", err)
+
+            lock.release()
+            log.log(5, "Released lock: %s", lock)
+
+            return res
+        return wrapped
+    return i2c_lock_decorator
 
 
 def load_settings(fpath: str | None = None) -> dict:
