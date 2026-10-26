@@ -67,32 +67,60 @@ I2C_LOCK = FairLock('I2C_LOCK')
 SCAN_LOCK = FairLock('SCAN_LOCK')
 
 
-def locker(lock):
+class _Busy:
+    """Sentinel returned when a locked call was skipped (lock not acquired)"""
+
+    def __repr__(self):
+        return "BUSY"
+
+
+BUSY = _Busy()
+
+
+def locker(lock, default=None):
+    """
+    Decorator to run a function while holding a lock
+
+    Arguments:
+        lock: Lock to hold (must have acquire(timeout=) and release())
+
+    Keyword arguments:
+        default: Value returned if the lock cannot be acquired within
+            LOCK_TIMEOUT, or if the wrapped function raises an Exception.
+            Choose something the caller can use directly (e.g., a
+            (nan, nan) tuple for a function that returns two values), since
+            callers will otherwise get None. Should be immutable.
+
+    """
+
     log = logging.getLogger(__name__)
 
     def locker_decorator(func):
 
         @wraps(func)
         def wrapped(*args, **kwargs):
-            res = None
-
             if not lock.acquire(timeout=LOCK_TIMEOUT):
                 log.warning(
-                    "Failed to acquire lock '%s', display not updated!",
+                    "Failed to acquire lock '%s' for '%s'",
                     lock,
+                    func.__qualname__,
                 )
-                return res
+                return default
 
             log.log(5, "Acquired lock: %s", lock)
             try:
-                res = func(*args, **kwargs)
+                return func(*args, **kwargs)
             except Exception as err:
-                log.exception("Failed to run function: %s", err)
+                log.exception(
+                    "Failed to run '%s': %s",
+                    func.__qualname__,
+                    err,
+                )
+                return default
+            finally:
+                lock.release()
+                log.log(5, "Released lock: %s", lock)
 
-            lock.release()
-            log.log(5, "Released lock: %s", lock)
-
-            return res
         return wrapped
     return locker_decorator
 

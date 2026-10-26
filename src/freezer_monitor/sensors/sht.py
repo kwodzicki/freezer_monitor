@@ -15,7 +15,7 @@ import numpy
 import adafruit_sht31d
 
 from .. import STOP_EVENT
-from ..utils import locker, I2C_LOCK
+from ..utils import locker, I2C_LOCK, BUSY
 from .basesensor import BaseSensor
 
 # Minimum number of polls to run before NaN check is done
@@ -192,16 +192,26 @@ class SHT30(BaseSHT):
         )
 
     @property
-    @locker(I2C_LOCK)
+    @locker(I2C_LOCK, default=BUSY)
     def status(self) -> int:
+        """
+        Sensor status register; None if read fails, BUSY if bus lock not got
+        """
+
         try:
             return self.sensor.status
         except Exception:
             return None
 
-    @locker(I2C_LOCK)
+    @locker(I2C_LOCK, default=(numpy.nan, numpy.nan))
     def poll(self):
-        """Poll the sensor for temperature and humidity"""
+        """
+        Poll the sensor for temperature and humidity
+
+        Always returns a (temperature, relative humidity) tuple. Values are
+        NaN if the bus lock could not be acquired or the read failed.
+
+        """
 
         t = rh = numpy.nan
         # Get I2C lock for thread safety
@@ -245,6 +255,49 @@ class SHT30(BaseSHT):
             f"T : {temp:6.1f} {unit}",
         ]
 
+    def _poll_once(self):
+        """Poll sensor, log the data, and check thresholds; one loop pass"""
+
+        temp, rh = self.poll()  # Get temperature and humidity
+
+        # Write data to the csv file
+        self.data_log.write(
+            f"{temp:6.1f} {self.units}",
+            f"{rh:6.1f} %",
+        )
+
+        if self.websocket:
+            self.websocket.write(
+                name=self.name,
+                temp=temp,
+                rh=rh,
+            )
+        # Shift data in rolling averge for new value
+        # and add new temperature to rolling average array
+        self.t_30min_avg = numpy.roll(self.t_30min_avg, -1)
+        self.t_30min_avg[-1] = temp
+
+        # If not enough polss, then return
+        if self.nn < MIN_NUM_POLL:
+            return
+
+        # Compute average temperature
+        avg = numpy.nanmean(self.t_30min_avg)
+
+        # If polled enough times AND average is not finite
+        if not numpy.isfinite(avg):
+            self.allNaN()  # AllNaN email
+        elif (
+            isinstance(self.max_thres, (int, float))
+            and avg > self.max_thres
+        ):
+            self.overTemp(temp, rh)  # Over temp email
+        elif (
+            isinstance(self.min_thres, (int, float))
+            and avg < self.min_thres
+        ):
+            self.underTemp(temp, rh)  # Under temp email
+
     def run(self):
         """Run in thread for polling sensor"""
 
@@ -261,45 +314,12 @@ class SHT30(BaseSHT):
         ):
             # Get current monotonic time; used to compute delay until next poll
             t0 = time.monotonic()
-            temp, rh = self.poll()  # Get temperature and humidity
-
-            # Write data to the csv file
-            self.data_log.write(
-                f"{temp:6.1f} {self.units}",
-                f"{rh:6.1f} %",
-            )
-
-            if self.websocket:
-                self.websocekt.write(
-                    name=self.name,
-                    temp=temp,
-                    rh=rh,
-                )
-            # Shift data in rolling averge for new value
-            # and add new temperature to rolling average array
-            self.t_30min_avg = numpy.roll(self.t_30min_avg, -1)
-            self.t_30min_avg[-1] = temp
-
-            # If not enough polss, then continue
-            if self.nn < MIN_NUM_POLL:
-                continue
-
-            # Compute average temperature
-            avg = numpy.nanmean(self.t_30min_avg)
-
-            # If polled enough times AND average is not finite
-            if not numpy.isfinite(avg):
-                self.allNaN()  # AllNaN email
-            elif (
-                isinstance(self.max_thres, (int, float))
-                and avg > self.max_thres
-            ):
-                self.overTemp(temp, rh)  # Over temp email
-            elif (
-                isinstance(self.min_thres, (int, float))
-                and avg < self.min_thres
-            ):
-                self.underTemp(temp, rh)  # Under temp email
+            try:
+                self._poll_once()
+            except Exception:
+                # Never let an unexpected error end the polling thread; a dead
+                # thread looks healthy to the rescan because status still works
+                self.__log.exception("%s - Error in polling loop", self.name)
 
         # If heater timer thread exists, cancel it
         if self._heater_timer:

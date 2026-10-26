@@ -6,6 +6,7 @@ from ..utils import (
     muxer_device_on_channel,
     locker,
     SCAN_LOCK,
+    BUSY,
 )
 
 from ..emailer import EMailer
@@ -82,20 +83,26 @@ class Sensors(EMailer):
 
             sensor_obj = self._sensors.pop(key, None)
 
-            # If object is not none, then we will check the stats
+            # If object is not none, then we will check the health
             if sensor_obj is not None:
-                # If status is NOT None, then assume okay
-                if sensor_obj.status is not None:
+                alive = sensor_obj.is_alive()
+                status = sensor_obj.status
+
+                # Healthy if thread running AND status read worked. If could
+                # not get the bus lock (BUSY), we do not know anything; assume
+                # okay rather than tear down a working sensor.
+                if alive and status is not None:
                     self.log.info("%s - Assuming sensor is okay", name)
                     self._sensors[key] = sensor_obj
                     continue
 
-                # If made here, then statis IS None; i.e., failed to get
-                # status, and will try rescan to find device.
+                # If made here, then thread died OR status read failed
                 self.log.warning(
-                    "%s - Sensor NOT functioning properly. "
-                    "Stopping thread and waiting to close...",
+                    "%s - Sensor NOT functioning properly (thread alive: %s; "
+                    "status: %s). Stopping thread and waiting to close...",
                     name,
+                    alive,
+                    "BUSY" if status is BUSY else status,
                 )
                 sensor_obj.remove()
                 sensor_obj.join()
