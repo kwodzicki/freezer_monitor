@@ -15,7 +15,7 @@ import numpy
 import adafruit_sht31d
 
 from .. import STOP_EVENT
-from ..utils import i2c_lock, I2C_LOCK
+from ..utils import locker, I2C_LOCK
 from .basesensor import BaseSensor
 
 # Minimum number of polls to run before NaN check is done
@@ -94,7 +94,7 @@ class BaseSHT(BaseSensor):
         self.min_thres = min_thres
         self.max_thres = max_thres
 
-    @i2c_lock(I2C_LOCK)
+    @locker(I2C_LOCK)
     def _toggle_heater(self, state):
         """Toggle sensor heater state"""
 
@@ -192,14 +192,14 @@ class SHT30(BaseSHT):
         )
 
     @property
-    @i2c_lock(I2C_LOCK)
+    @locker(I2C_LOCK)
     def status(self) -> int:
         try:
             return self.sensor.status
         except Exception:
             return None
 
-    @i2c_lock(I2C_LOCK)
+    @locker(I2C_LOCK)
     def poll(self):
         """Poll the sensor for temperature and humidity"""
 

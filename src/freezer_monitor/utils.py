@@ -1,7 +1,9 @@
 import logging
 import os
+import time
 from functools import wraps
-from threading import Lock
+from threading import Lock, Event
+from queue import Queue
 
 import yaml
 from adafruit_tca9548a import TCA9548A
@@ -10,23 +12,19 @@ from . import SETTINGS_FILE
 
 LOCK_TIMEOUT = 1.0
 
+import threading
+import queue
 
-class MyLock:
 
+class FairLock:
     def __init__(self, name: str):
         self._lock = Lock()
+        self._waiters = Queue()
         self._name = name
 
     def __repr__(self):
 
         return f"<{self._name}>"
-
-    def acquire(self, *args, **kwargs):
-        return self._lock.acquire(*args, **kwargs)
-
-    def release(self, *args, **kwargs):
-        # traceback.print_tb
-        return self._lock.release(*args, **kwargs)
 
     def __enter__(self):
         self.acquire()
@@ -34,15 +32,45 @@ class MyLock:
     def __exit__(self, type, value, traceback):
         self.release()
 
+    def acquire(self, timeout: float | None = None):
+        event = Event()
+        self._waiters.put(event)
+        timeout = float('inf') if timeout is None else timeout
+        start_time = time.monotonic()
 
-I2C_LOCK = MyLock('I2C_LOCK')
-SCAN_LOCK = MyLock('SCAN_LOCK')
+        while True:
+            if self._waiters.queue[0] is event and self._lock.acquire(False):
+                self._waiters.get()
+                return True
+
+            if time.monotonic() - start_time >= timeout:
+                # Timeout: remove event from queue
+                with self._waiters.mutex:
+                    try:
+                        self._waiters.queue.remove(event)
+                    except ValueError:
+                        pass
+                return False
+            event.wait(0.01)  # Short sleep to avoid spinning
+
+        while True:
+            if self._waiters.queue[0] is event and self._lock.acquire(False):
+                self._waiters.get()
+                return
+            event.wait(0.01)  # Avoid busy spin
+
+    def release(self):
+        self._lock.release()
 
 
-def i2c_lock(lock):
+I2C_LOCK = FairLock('I2C_LOCK')
+SCAN_LOCK = FairLock('SCAN_LOCK')
+
+
+def locker(lock):
     log = logging.getLogger(__name__)
 
-    def i2c_lock_decorator(func):
+    def locker_decorator(func):
 
         @wraps(func)
         def wrapped(*args, **kwargs):
@@ -66,7 +94,7 @@ def i2c_lock(lock):
 
             return res
         return wrapped
-    return i2c_lock_decorator
+    return locker_decorator
 
 
 def load_settings(fpath: str | None = None) -> dict:

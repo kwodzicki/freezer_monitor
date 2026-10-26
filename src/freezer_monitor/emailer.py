@@ -3,22 +3,12 @@ import logging
 import time
 import smtplib
 from email.message import EmailMessage
-from threading import Thread, Lock
+from threading import Thread
 
-from .utils import load_settings
+from .utils import load_settings, locker, FairLock
 
 RESEND = 30 * 60.0  # Time before another email will be sent
-TLOCK = Lock()
-
-
-def locked(fn):
-    """To use as decorator to make function thread safe"""
-
-    def lockedWrap(*args, **kwargs):
-        with TLOCK:
-            return fn(*args, **kwargs)
-
-    return lockedWrap
+TLOCK = FairLock('emailer')
 
 
 # Threaded function snippet
@@ -63,7 +53,7 @@ class EMailer:
 
         return (self.send_to is not None) and (self.send_from is not None)
 
-    @locked
+    @locker(TLOCK)
     def allNaN(self):
         """Send email for all NaN slice encountered!"""
 
@@ -83,7 +73,7 @@ class EMailer:
         self.sendMail(subject, content)
         self.__allNaN = time.monotonic()
 
-    @locked
+    @locker(TLOCK)
     def overTemp(self, temp, rh):
         """Send email for over temperature threshold!"""
 
@@ -108,7 +98,7 @@ class EMailer:
         self.sendMail(subject, content)
         self.__overTemp = time.monotonic()
 
-    @locked
+    @locker(TLOCK)
     def underTemp(self, temp, rh):
         """Send email for under temperature threshold!"""
 

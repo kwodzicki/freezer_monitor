@@ -4,7 +4,7 @@ from threading import Timer
 from ..utils import (
     load_settings,
     muxer_device_on_channel,
-    i2c_lock,
+    locker,
     SCAN_LOCK,
 )
 
@@ -32,24 +32,25 @@ class Sensors(EMailer):
         self.muxer = muxer
         self.scan_for_sensors()
 
-    @i2c_lock(SCAN_LOCK)
+    @locker(SCAN_LOCK)
     def __len__(self):
 
         return len(self._sensors)
 
-    @i2c_lock(SCAN_LOCK)
+    @locker(SCAN_LOCK)
     def __iter__(self):
 
         return list(self._sensors.values())
 
-    @i2c_lock(SCAN_LOCK)
-    def cycle_thru(self, ncycles):
+    @locker(SCAN_LOCK)
+    def sensor_info(self):
 
-        for i in range(ncycles):
-            for sensor in self._sensors.values():
-                yield sensor
+        return {
+            sensor.name: sensor.display_text()
+            for sensor in self._sensors.values()
+        }
 
-    @i2c_lock(SCAN_LOCK)
+    @locker(SCAN_LOCK)
     def scan_for_sensors(self):
         """
         Run scan for sensors
@@ -148,7 +149,7 @@ class Sensors(EMailer):
                 "No sensors found/connected! Check the system immediately!",
             )
 
-    @i2c_lock(SCAN_LOCK)
+    @locker(SCAN_LOCK)
     def join(self):
 
         self.log.debug("Canceling rescan timer")
