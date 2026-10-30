@@ -9,13 +9,13 @@
 import logging
 import time
 
-from threading import Timer, Event, Lock
+from threading import Timer, Lock
 
 import numpy
 import adafruit_sht31d
 
-from .. import STOP_EVENT
-from ..utils import locker, I2C_LOCK, BUSY
+from .. import STOP_EVENT, I2C_LOCK, BUSY
+from ..thread_utils import LinkedEvent, locker
 from .basesensor import BaseSensor
 
 # Minimum number of polls to run before NaN check is done
@@ -76,7 +76,7 @@ class BaseSHT(BaseSensor):
         self.__log = logging.getLogger(__name__)
         self.__log.setLevel(logging.DEBUG)
 
-        self._remove = Event()
+        self._remove = LinkedEvent()
 
         self.sensor = None
 
@@ -308,10 +308,7 @@ class SHT30(BaseSHT):
         t0 = 0.0
         # Wait for event, delay is computed in function and we want event to
         # be NOT set
-        while (
-            not self._remove.is_set()
-            and not STOP_EVENT.wait(self.delay(t0))
-        ):
+        while not STOP_EVENT.wait_any(self._remove, timeout=self.delay(t0)):
             # Get current monotonic time; used to compute delay until next poll
             t0 = time.monotonic()
             try:

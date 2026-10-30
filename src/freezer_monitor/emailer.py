@@ -5,7 +5,8 @@ import smtplib
 from email.message import EmailMessage
 from threading import Thread
 
-from .utils import load_settings, locker, FairLock
+from .utils import load_settings
+from .thread_utils import locker, FairLock
 
 RESEND = 30 * 60.0  # Time before another email will be sent
 TLOCK = FairLock('emailer')

@@ -2,7 +2,8 @@ import logging
 from logging.handlers import RotatingFileHandler
 
 import os
-from threading import Event
+
+from . thread_utils import LinkedEvent, FairLock, _Busy
 
 HOME = os.path.expanduser("~")
 APPDIR = os.path.join(HOME, "Freezer_Monitor")
@@ -28,4 +29,9 @@ LOG.setLevel(logging.DEBUG)
 LOG.addHandler(lfile)
 
 DEFAULT_INTERVAL = 10.0  # Sensor polling interval
-STOP_EVENT = Event()
+
+STOP_EVENT = LinkedEvent()
+
+I2C_LOCK = FairLock('I2C_LOCK')
+SCAN_LOCK = FairLock('SCAN_LOCK')
+BUSY = _Busy()

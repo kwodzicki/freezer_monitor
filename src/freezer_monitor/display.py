@@ -8,8 +8,8 @@ from gpiozero import Button
 
 import adafruit_ssd1306
 
-from . import STOP_EVENT
-from .utils import locker, I2C_LOCK
+from . import STOP_EVENT, I2C_LOCK
+from .thread_utils import locker
 
 NCYCLES = 3  # Number of times to cycle through all sensors
 TIMEOUT = 60.0  # Timeout (in seconds) for display to turn off

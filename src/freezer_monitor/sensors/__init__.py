@@ -1,13 +1,12 @@
 import logging
 from threading import Timer
 
+from .. import STOP_EVENT, SCAN_LOCK, BUSY
 from ..utils import (
     load_settings,
     muxer_device_on_channel,
-    locker,
-    SCAN_LOCK,
-    BUSY,
 )
+from ..thread_utils import locker
 
 from ..emailer import EMailer
 
@@ -31,7 +30,7 @@ class Sensors(EMailer):
         self._sensors = {}
 
         self.muxer = muxer
-        self.scan_for_sensors()
+        self._scan_and_rearm()
 
     @locker(SCAN_LOCK)
     def __len__(self):
@@ -42,6 +41,14 @@ class Sensors(EMailer):
     def __iter__(self):
 
         return list(self._sensors.values())
+
+    def _scan_and_rearm(self):
+        if STOP_EVENT.is_set():             # don't schedule after shutdown
+            return
+        self._rescan = Timer(self.RESCAN, self._scan_and_rearm)
+        self._rescan.daemon = True          # won't keep the process alive
+        self._rescan.start()
+        self.scan_for_sensors()             # may time out; the chain survives
 
     @locker(SCAN_LOCK)
     def sensor_info(self):
@@ -63,10 +70,6 @@ class Sensors(EMailer):
 
         """
 
-        self.log.debug("Initializing new Timer object")
-        self._rescan = Timer(self.RESCAN, self.scan_for_sensors)
-        self._rescan.start()
-
         self.log.debug("Trying to scan for sensors")
 
         try:
@@ -81,7 +84,7 @@ class Sensors(EMailer):
 
             name = info.get('name', '???')
 
-            sensor_obj = self._sensors.pop(key, None)
+            sensor_obj = self._sensors.get(key, None)
 
             # If object is not none, then we will check the health
             if sensor_obj is not None:
@@ -91,10 +94,13 @@ class Sensors(EMailer):
                 # Healthy if thread running AND status read worked. If could
                 # not get the bus lock (BUSY), we do not know anything; assume
                 # okay rather than tear down a working sensor.
-                if alive and status is not None:
-                    self.log.info("%s - Assuming sensor is okay", name)
-                    self._sensors[key] = sensor_obj
-                    continue
+                if alive:
+                    if status is BUSY:
+                        self.log.info("%s - Busy, assuming okay", name)
+                        continue
+                    if status is not None:
+                        self.log.info("%s - Assuming sensor is okay", name)
+                        continue
 
                 # If made here, then thread died OR status read failed
                 self.log.warning(
@@ -106,6 +112,7 @@ class Sensors(EMailer):
                 )
                 sensor_obj.remove()
                 sensor_obj.join()
+                del self._sensors[key]
 
             _, channel, stype = key.split('.')  # Split information
             channel = int(channel)  # Convert channel number in to int
@@ -164,7 +171,9 @@ class Sensors(EMailer):
 
         self.log.debug("Joining sensor threads")
         for key in list(self._sensors.keys()):
-            self._sensors.pop(key).join()
+            sensor = self._sensors.pop(key)
+            sensor.remove()
+            sensor.join()
 
         self.log.debug("Sensors finished")
 
