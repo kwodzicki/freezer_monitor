@@ -34,7 +34,7 @@ class LinkedEvent(Event):
 
         with LinkedEvent._shared_cond:
             end_time = (
-                time.time() + timeout
+                time.monotonic() + timeout
                 if timeout is not None else
                 float('inf')
             )
@@ -42,7 +42,7 @@ class LinkedEvent(Event):
             while not any(e.is_set() for e in all_events):
                 remaining = None
                 if timeout is not None:
-                    remaining = end_time - time.time()
+                    remaining = end_time - time.monotonic()
                     if remaining <= 0:
                         return False
 
@@ -87,13 +87,7 @@ class FairLock:
                     except ValueError:
                         pass
                 return False
-            event.wait(0.01)  # Short sleep to avoid spinning
-
-        while True:
-            if self._waiters.queue[0] is event and self._lock.acquire(False):
-                self._waiters.get()
-                return
-            event.wait(0.01)  # Avoid busy spin
+            event.wait(0.01)  # Short sleep to avoid spinning
 
     def release(self):
         self._lock.release()
