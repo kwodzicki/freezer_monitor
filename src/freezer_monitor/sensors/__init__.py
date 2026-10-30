@@ -165,7 +165,8 @@ class Sensors(EMailer):
 
         self.log.debug("Finished scanning")
 
-        if len(self._sensors) == 0:
+        # If not sensors found, and we are not tearing them down b/c closing
+        if len(self._sensors) == 0 and not self._closing.is_set():
             self.sendMail(
                 "No Sensors!!!",
                 "No sensors found/connected! Check the system immediately!",
