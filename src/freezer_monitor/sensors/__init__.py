@@ -1,5 +1,5 @@
 import logging
-from threading import Timer
+from threading import Timer, Event
 
 from .. import STOP_EVENT, SCAN_LOCK, BUSY
 from ..utils import (
@@ -21,6 +21,8 @@ class Sensors(EMailer):
 
     AVAILABLE = [sht]
     RESCAN = 10 * 60  # Rescan interval 10 minutes
+    JOIN_LOCK_TIMEOUT = 15.0  # Max wait for an in-flight scan during join()
+    JOIN_TIMEOUT = 10.0  # Max wait for each sensor thread during join()
 
     def __init__(self, muxer):
         super().__init__()
@@ -28,6 +30,7 @@ class Sensors(EMailer):
         self.log = logging.getLogger(__name__)
         self._rescan = None
         self._sensors = {}
+        self._closing = Event()  # Set by join(); scans stop at next check
 
         self.muxer = muxer
         self._scan_and_rearm()
@@ -43,8 +46,8 @@ class Sensors(EMailer):
         return list(self._sensors.values())
 
     def _scan_and_rearm(self):
-        if STOP_EVENT.is_set():             # don't schedule after shutdown
-            return
+        if STOP_EVENT.is_set() or self._closing.is_set():
+            return                          # don't schedule after shutdown
         self._rescan = Timer(self.RESCAN, self._scan_and_rearm)
         self._rescan.daemon = True          # won't keep the process alive
         self._rescan.start()
@@ -81,6 +84,11 @@ class Sensors(EMailer):
         for key, info in settings.items():
             if not key.startswith('sensor.'):
                 continue
+
+            # Shutting down; do not rebuild/start sensors or send alerts
+            if self._closing.is_set() or STOP_EVENT.is_set():
+                self.log.info("Shutting down; ending scan early")
+                return
 
             name = info.get('name', '???')
 
@@ -163,17 +171,59 @@ class Sensors(EMailer):
                 "No sensors found/connected! Check the system immediately!",
             )
 
-    @locker(SCAN_LOCK)
     def join(self):
+        """
+        Stop rescanning and stop/join all sensor threads
+
+        Deliberately NOT wrapped in @locker: that decorator skips the whole
+        call if the lock is not free within LOCK_TIMEOUT, which would leave
+        the rescan timer and sensors untouched at shutdown. Here we flag
+        shutdown so any scan stops at its next check, then wait (up to
+        JOIN_LOCK_TIMEOUT) for an in-flight scan to finish. If the lock still
+        cannot be had we carry on anyway; sensor threads exit on their own
+        once STOP_EVENT is set, and nothing here needs the lock to be correct
+        for that.
+
+        """
+
+        self._closing.set()
 
         self.log.debug("Canceling rescan timer")
-        self._rescan.cancel()
+        rescan = self._rescan
+        if rescan is not None:
+            rescan.cancel()
 
-        self.log.debug("Joining sensor threads")
-        for key in list(self._sensors.keys()):
-            sensor = self._sensors.pop(key)
-            sensor.remove()
-            sensor.join()
+        locked = SCAN_LOCK.acquire(timeout=self.JOIN_LOCK_TIMEOUT)
+        if not locked:
+            self.log.error(
+                "Could not get scan lock in %.1f s; stopping sensors anyway",
+                self.JOIN_LOCK_TIMEOUT,
+            )
+
+        try:
+            sensors = list(self._sensors.values())
+            self._sensors.clear()
+
+            # Signal every sensor first so they all stop in parallel
+            for sensor in sensors:
+                sensor.remove()
+
+            self.log.debug("Joining sensor threads")
+            for sensor in sensors:
+                try:
+                    sensor.join(timeout=self.JOIN_TIMEOUT)
+                except Exception:
+                    self.log.exception("Error joining %s", sensor.name)
+                    continue
+                if sensor.is_alive():
+                    self.log.error(
+                        "%s - thread still running after %.1f s",
+                        sensor.name,
+                        self.JOIN_TIMEOUT,
+                    )
+        finally:
+            if locked:
+                SCAN_LOCK.release()
 
         self.log.debug("Sensors finished")
 
