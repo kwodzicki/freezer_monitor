@@ -8,6 +8,8 @@ from . import monitor
 
 
 def kill(*args, **kwargs):
+    if STOP_EVENT.is_set():  # already shutting down; ignore repeat signals
+        return
     print("setting STOP_EVENT")
     STOP_EVENT.set()
 

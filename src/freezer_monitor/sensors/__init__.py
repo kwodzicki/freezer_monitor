@@ -167,7 +167,8 @@ class Sensors(EMailer):
     def join(self):
 
         self.log.debug("Canceling rescan timer")
-        self._rescan.cancel()
+        if self._rescan is not None:
+            self._rescan.cancel()
 
         self.log.debug("Joining sensor threads")
         for key in list(self._sensors.keys()):
