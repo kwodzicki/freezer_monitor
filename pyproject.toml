@@ -23,6 +23,11 @@ dependencies = [
     "adafruit-circuitpython-tca9548a",
 ]
 
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+
 [project.urls]
 Repository = "https://github.com/kwodzicki/freezer_monitor"
 
@@ -34,3 +39,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "*" = ["*.yml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
