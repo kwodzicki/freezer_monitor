@@ -243,22 +243,32 @@ class SHT30(BaseSHT):
         """
         Builds lines to display on screen
 
+        Uses the latest reading from the polling thread rather than reading
+        the sensor, so it never touches the I2C bus or waits on I2C_LOCK, and
+        does not add extra measurements (or inflate the poll counter).
+
         Returns list of strings where each string is a new line to display
         on the screen
 
         """
 
-        temp, rh = self.poll()
         unit = 'C' if self.units in DEG_C else 'F'
+        reading = self.latest
+        # No reading yet, a stale one (polling thread stuck/starved), or a
+        # failed one (NaN): show a placeholder rather than a misleading value
+        if self.is_stale(reading) or numpy.isnan(reading.temp):
+            return [self.name, f"T : {'---':>6s} {unit}"]
+
         return [
             self.name,
-            f"T : {temp:6.1f} {unit}",
+            f"T : {reading.temp:6.1f} {unit}",
         ]
 
     def _poll_once(self):
         """Poll sensor, log the data, and check thresholds; one loop pass"""
 
         temp, rh = self.poll()  # Get temperature and humidity
+        self._publish(temp, rh)  # Make available to display, lock-free
 
         # Write data to the csv file
         self.data_log.write(

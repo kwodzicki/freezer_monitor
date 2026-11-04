@@ -54,12 +54,30 @@ class Sensors(EMailer):
         self.scan_for_sensors()             # may time out; the chain survives
 
     @locker(SCAN_LOCK)
-    def sensor_info(self):
+    def _snapshot(self):
+        """Copy of the sensor list; the ONLY thing held under SCAN_LOCK"""
 
-        return {
-            sensor.name: sensor.display_text()
-            for sensor in self._sensors.values()
-        }
+        return list(self._sensors.values())
+
+    def sensor_info(self):
+        """
+        Display text for every sensor, keyed by sensor name
+
+        SCAN_LOCK is held just long enough to copy the list of sensors. The
+        text itself is built afterwards, outside the lock, from each sensor's
+        cached reading (see BaseSensor.latest), so a slow scan can only delay
+        this by the time it takes to copy a list, and no I2C access happens
+        here at all.
+
+        Returns None if the scan lock could not be had in time.
+
+        """
+
+        sensors = self._snapshot()
+        if sensors is None:
+            return None
+
+        return {sensor.name: sensor.display_text() for sensor in sensors}
 
     @locker(SCAN_LOCK)
     def scan_for_sensors(self):

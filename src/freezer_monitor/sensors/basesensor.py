@@ -11,13 +11,34 @@ import os
 import time
 
 from threading import Thread
+from typing import NamedTuple
 
 from .. import DATADIR, DEFAULT_INTERVAL
 from ..timerotatingcsv import DailyRotatingCSV
 from . import EMailer
 
 
+class Reading(NamedTuple):
+    """
+    One immutable sensor reading
+
+    Immutability is what makes the cache lock-free: the polling thread
+    publishes a whole new Reading with a single attribute assignment (atomic
+    in CPython), and other threads either see the old one or the new one,
+    never a half-written mix of temperature from one poll and humidity from
+    another.
+
+    """
+
+    temp: float  # In the sensor's configured units
+    rh: float  # Percent
+    taken: float  # time.monotonic() when the reading was made
+
+
 class BaseSensor(EMailer, Thread):
+
+    # A reading older than STALE_FACTOR * interval is considered stale
+    STALE_FACTOR = 3.0
 
     def __init__(
         self,
@@ -52,6 +73,7 @@ class BaseSensor(EMailer, Thread):
         self._heater_timer = None
 
         self.sensor = None
+        self._reading = None  # Latest Reading; written ONLY by polling thread
 
         self.name = name
         self.interval = interval
@@ -75,6 +97,38 @@ class BaseSensor(EMailer, Thread):
         if dt < 0.0:  # If the delay is less than zero (0.0), then return zero
             return 0.0
         return dt  # Return dt
+
+    @property
+    def latest(self) -> Reading | None:
+        """
+        Most recent reading made by the polling thread, or None
+
+        Never touches the bus and never takes a lock, so it is safe (and
+        cheap) to call from any thread, e.g., the display.
+
+        """
+
+        return self._reading
+
+    def _publish(self, temp: float, rh: float):
+        """Publish a new reading; only the polling thread should call"""
+
+        self._reading = Reading(temp, rh, time.monotonic())
+
+    def is_stale(self, reading: Reading | None) -> bool:
+        """
+        True if there is no reading, or it is too old to trust
+
+        Takes the reading explicitly (rather than looking at self._reading)
+        so a caller judges the very same snapshot it goes on to use, even if
+        the polling thread publishes a new one in between.
+
+        """
+
+        if reading is None:
+            return True
+        age = time.monotonic() - reading.taken
+        return age > self.STALE_FACTOR * self.interval
 
     def display_text(self) -> list[str]:
         """
