@@ -4,7 +4,7 @@ on:
   pull_request:
     branches:
       - main  # Change this to match your default branch name (e.g., master)
-
+      - develop
 jobs:
   test:
     runs-on: ubuntu-latest
