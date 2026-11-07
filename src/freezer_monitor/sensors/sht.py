@@ -9,12 +9,13 @@
 import logging
 import time
 
-from threading import Timer, Event, Lock
+from threading import Timer, Lock
 
 import numpy
 import adafruit_sht31d
 
-from .. import STOP_EVENT, I2C_LOCK, LOCK_TIMEOUT
+from .. import STOP_EVENT, I2C_LOCK, BUSY
+from ..thread_utils import LinkedEvent, locker
 from .basesensor import BaseSensor
 
 # Minimum number of polls to run before NaN check is done
@@ -75,6 +76,8 @@ class BaseSHT(BaseSensor):
         self.__log = logging.getLogger(__name__)
         self.__log.setLevel(logging.DEBUG)
 
+        self._remove = LinkedEvent()
+
         self.sensor = None
 
         self.units = units or DEFAULT_UNIT
@@ -91,16 +94,9 @@ class BaseSHT(BaseSensor):
         self.min_thres = min_thres
         self.max_thres = max_thres
 
+    @locker(I2C_LOCK)
     def _toggle_heater(self, state):
         """Toggle sensor heater state"""
-
-        # Grab I2C lock for thread safety
-        if not I2C_LOCK.acquire(timeout=LOCK_TIMEOUT):
-            self.__log.warning(
-                "%s - Failed to acquire lock, could not toggle heater!",
-                self.name,
-            )
-            return
 
         try:  # Try to set the heater state
             self.sensor.heater = state
@@ -116,7 +112,6 @@ class BaseSHT(BaseSensor):
                 self.name,
                 state,
             )
-        I2C_LOCK.release()
 
     def run_heater(self, duration=10.0, interval=1800.0):
         """
@@ -143,6 +138,10 @@ class BaseSHT(BaseSensor):
     def poll(self):
 
         pass
+
+    def remove(self):
+
+        self._remove.set()
 
 
 class SHT30(BaseSHT):
@@ -182,8 +181,6 @@ class SHT30(BaseSHT):
         self.__log = logging.getLogger(__name__)
         self.__log.setLevel(logging.DEBUG)
 
-        self.__stop = Event()
-
         self.websocket = None
         self.sensor = adafruit_sht31d.SHT31D(i2c_bus, address=self.ADDRESS)
 
@@ -195,24 +192,29 @@ class SHT30(BaseSHT):
         )
 
     @property
+    @locker(I2C_LOCK, default=BUSY)
     def status(self) -> int:
+        """
+        Sensor status register; None if read fails, BUSY if bus lock not got
+        """
+
         try:
             return self.sensor.status
         except Exception:
             return None
 
+    @locker(I2C_LOCK, default=(numpy.nan, numpy.nan))
     def poll(self):
-        """Poll the sensor for temperature and humidity"""
+        """
+        Poll the sensor for temperature and humidity
+
+        Always returns a (temperature, relative humidity) tuple. Values are
+        NaN if the bus lock could not be acquired or the read failed.
+
+        """
 
         t = rh = numpy.nan
         # Get I2C lock for thread safety
-        if not I2C_LOCK.acquire(timeout=LOCK_TIMEOUT):
-            self.__log.warning(
-                "%s - Failed to acquire lock, could not poll sensor!",
-                self.name,
-            )
-            return t, rh
-
         self.nn += 1
         try:  # Try to get information from temperature sensor
             t = self.sensor.temperature
@@ -235,24 +237,76 @@ class SHT30(BaseSHT):
                 err,
             )
 
-        I2C_LOCK.release()
         return t, rh  # Return the temperature and RH
 
     def display_text(self) -> list[str]:
         """
         Builds lines to display on screen
 
+        Uses the latest reading from the polling thread rather than reading
+        the sensor, so it never touches the I2C bus or waits on I2C_LOCK, and
+        does not add extra measurements (or inflate the poll counter).
+
         Returns list of strings where each string is a new line to display
         on the screen
 
         """
 
-        temp, rh = self.poll()
         unit = 'C' if self.units in DEG_C else 'F'
+        reading = self.latest
+        # No reading yet, a stale one (polling thread stuck/starved), or a
+        # failed one (NaN): show a placeholder rather than a misleading value
+        if self.is_stale(reading) or numpy.isnan(reading.temp):
+            return [self.name, f"T : {'---':>6s} {unit}"]
+
         return [
             self.name,
-            f"T : {temp:6.1f} {unit}",
+            f"T : {reading.temp:6.1f} {unit}",
         ]
+
+    def _poll_once(self):
+        """Poll sensor, log the data, and check thresholds; one loop pass"""
+
+        temp, rh = self.poll()  # Get temperature and humidity
+        self._publish(temp, rh)  # Make available to display, lock-free
+
+        # Write data to the csv file
+        self.data_log.write(
+            f"{temp:6.1f} {self.units}",
+            f"{rh:6.1f} %",
+        )
+
+        if self.websocket:
+            self.websocket.write(
+                name=self.name,
+                temp=temp,
+                rh=rh,
+            )
+        # Shift data in rolling averge for new value
+        # and add new temperature to rolling average array
+        self.t_30min_avg = numpy.roll(self.t_30min_avg, -1)
+        self.t_30min_avg[-1] = temp
+
+        # If not enough polss, then return
+        if self.nn < MIN_NUM_POLL:
+            return
+
+        # Compute average temperature
+        avg = numpy.nanmean(self.t_30min_avg)
+
+        # If polled enough times AND average is not finite
+        if not numpy.isfinite(avg):
+            self.allNaN()  # AllNaN email
+        elif (
+            isinstance(self.max_thres, (int, float))
+            and avg > self.max_thres
+        ):
+            self.overTemp(temp, rh)  # Over temp email
+        elif (
+            isinstance(self.min_thres, (int, float))
+            and avg < self.min_thres
+        ):
+            self.underTemp(temp, rh)  # Under temp email
 
     def run(self):
         """Run in thread for polling sensor"""
@@ -264,48 +318,15 @@ class SHT30(BaseSHT):
         t0 = 0.0
         # Wait for event, delay is computed in function and we want event to
         # be NOT set
-        while not self.__stop.is_set() and not STOP_EVENT.wait(self.delay(t0)):
+        while not STOP_EVENT.wait_any(self._remove, timeout=self.delay(t0)):
             # Get current monotonic time; used to compute delay until next poll
             t0 = time.monotonic()
-            temp, rh = self.poll()  # Get temperature and humidity
-
-            # Write data to the csv file
-            self.data_log.write(
-                f"{temp:6.1f} {self.units}",
-                f"{rh:6.1f} %",
-            )
-
-            if self.websocket:
-                self.websocekt.write(
-                    name=self.name,
-                    temp=temp,
-                    rh=rh,
-                )
-            # Shift data in rolling averge for new value
-            # and add new temperature to rolling average array
-            self.t_30min_avg = numpy.roll(self.t_30min_avg, -1)
-            self.t_30min_avg[-1] = temp
-
-            # If not enough polss, then continue
-            if self.nn < MIN_NUM_POLL:
-                continue
-
-            # Compute average temperature
-            avg = numpy.nanmean(self.t_30min_avg)
-
-            # If polled enough times AND average is not finite
-            if not numpy.isfinite(avg):
-                self.allNaN()  # AllNaN email
-            elif (
-                isinstance(self.max_thres, (int, float))
-                and avg > self.max_thres
-            ):
-                self.overTemp(temp, rh)  # Over temp email
-            elif (
-                isinstance(self.min_thres, (int, float))
-                and avg < self.min_thres
-            ):
-                self.underTemp(temp, rh)  # Under temp email
+            try:
+                self._poll_once()
+            except Exception:
+                # Never let an unexpected error end the polling thread; a dead
+                # thread looks healthy to the rescan because status still works
+                self.__log.exception("%s - Error in polling loop", self.name)
 
         # If heater timer thread exists, cancel it
         if self._heater_timer:
@@ -318,7 +339,3 @@ class SHT30(BaseSHT):
         self.data_log.join()
 
         self.__log.debug("Sensor '%s' thread dead!", self.name)
-
-    def stop(self):
-
-        self.__stop.set()

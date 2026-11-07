@@ -1,6 +1,6 @@
 import logging
 
-from threading import Thread, Timer, Lock, Event
+from threading import Thread, Timer, Event
 from subprocess import check_output
 
 from PIL import Image, ImageDraw, ImageFont
@@ -8,7 +8,8 @@ from gpiozero import Button
 
 import adafruit_ssd1306
 
-from . import STOP_EVENT, I2C_LOCK, LOCK_TIMEOUT
+from . import STOP_EVENT, I2C_LOCK
+from .thread_utils import locker
 
 NCYCLES = 3  # Number of times to cycle through all sensors
 TIMEOUT = 60.0  # Timeout (in seconds) for display to turn off
@@ -40,8 +41,9 @@ class SSD1306(Thread):
 
         self._showIP = showIP
         self._displayOn = Event()
-        self._lock = Lock()
         self._timer = None
+
+        self._sensor_gen = None
 
         timeout = timeout or TIMEOUT
 
@@ -106,6 +108,40 @@ class SSD1306(Thread):
             self.fontIP = None
             self.font = ImageFont.truetype(self.FONT, size=15)
 
+    def __next__(self):
+        """
+        Generate sensor information
+
+        We try to get the next sensor in the sensor informaiton. If this
+        fails due to type error, then we initialize a new generator for
+        sensor info using the _sensor_info_gen() method and run recursive
+        call. If we hit a stop iteration, then we set the _sensor_gen attr
+        back to None to indicate that already went through all sensors and
+        reraise StopIteration. Any other exception will be thrown straight
+        away.
+
+        """
+
+        try:
+            res = next(self._sensor_gen)
+        except TypeError:
+            self._sensor_gen = self._sensor_info_gen()
+            return self.__next__()
+        except StopIteration:
+            self._sensor_gen = None
+            raise StopIteration
+        return res
+
+    def _sensor_info_gen(self):
+
+        info = self.sensors.sensor_info()
+        if info is None or len(info) == 0:
+            raise ValueError("No sensors found")
+
+        for i in range(self.ncycles):
+            for key, val in info.items():
+                yield key, val
+
     def getIP(self):
         """Get current IP address and return"""
 
@@ -113,12 +149,11 @@ class SSD1306(Thread):
         ip = ip.split(" ")[0]
         return f"IP : {ip}"
 
-    def update(self, sensor):
+    def update(self, sensor: str, txt: str):
         """Update information in the image that is drawn on screen"""
 
-        self.__log.debug("Updating the display: %s", sensor.name)
+        self.__log.debug("Updating the display: %s", sensor)
 
-        txt = sensor.display_text()
         if len(txt) < 2:
             self.__log.error("Too few lines to display!")
             return
@@ -158,20 +193,16 @@ class SSD1306(Thread):
             fill=self.BRIGHTNESS,
         )  # Draw relative humidity data to image
 
+    @locker(I2C_LOCK)
     def draw(self):
         """Thread safe way to draw image on screen"""
 
         # Get I2C lock for thread safety
-        if not I2C_LOCK.acquire(timeout=LOCK_TIMEOUT):
-            self.__log.warning("Failed to acquire lock, display not updated!")
-            return
-
         try:
             self._display.image(self._image)  # Write image data to screen
             self._display.show()  # Refresh the screen
         except Exception as err:
             self.__log.error("Failed to update display : %s", err)
-        I2C_LOCK.release()
 
     def clear(self):
         """Clear the display; turn off all pixels"""
@@ -192,14 +223,15 @@ class SSD1306(Thread):
 
     def run(self):
 
-        needsClear = False  # Dose the screen need to be cleared
-        while not STOP_EVENT.is_set():  # While stop event is NOT set
+        needsClear = False  # Does the screen need to be cleared
+        while not STOP_EVENT.is_set():
             # Wait for displayOn event; is false if not set within timeout
-            sensor_gen = self.sensors.cycle_thru(self.ncycles)
             while self._displayOn.wait(timeout=1):
                 needsClear = True  # Set needsClear to be True
                 try:
-                    sensor = next(sensor_gen)
+                    sensor, txt = next(self)
+                except StopIteration:
+                    pass
                 except Exception:
                     self._draw.text(
                         [0, self.padding],
@@ -208,7 +240,7 @@ class SSD1306(Thread):
                         fill=self.BRIGHTNESS,
                     )  # Draw temperature data to image
                 else:
-                    self.update(sensor)  # Update the image on screen
+                    self.update(sensor, txt)  # Update the image on screen
                 self.draw()  # Draw to the screen
 
                 # Wait for cycle_time for STOP_EVENT to be set. If set within
