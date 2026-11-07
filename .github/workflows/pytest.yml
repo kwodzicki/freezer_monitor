@@ -1,0 +1,35 @@
+name: Run Pytest
+
+on:
+  pull_request:
+    branches:
+      - main  # Change this to match your default branch name (e.g., master)
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Installs your package and its test/dev dependencies defined in pyproject.toml
+          pip install .[test] || pip install .[dev] || pip install .
+          pip install pytest # Fallback to ensure pytest is available
+
+      - name: Run tests with pytest
+        run: |
+          pytest tests/
+
