@@ -9,6 +9,7 @@ from .utils import load_settings
 from .thread_utils import locker, FairLock
 
 RESEND = 30 * 60.0  # Time before another email will be sent
+SMTP_TIMEOUT = 30.0  # Seconds to wait on SMTP server before giving up
 TLOCK = FairLock('emailer')
 
 
@@ -138,6 +139,7 @@ class EMailer:
             server = smtplib.SMTP_SSL(
                 self.send_from["server"],
                 self.send_from["port"],
+                timeout=SMTP_TIMEOUT,
             )
         except Exception as err:
             self.__log.error("Failed to set up smtp connection : %s", err)

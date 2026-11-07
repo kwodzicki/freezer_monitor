@@ -182,14 +182,26 @@ class SHT30(BaseSHT):
         self.__log.setLevel(logging.DEBUG)
 
         self.websocket = None
-        self.sensor = adafruit_sht31d.SHT31D(i2c_bus, address=self.ADDRESS)
 
-        self.nn = 0  # Counter for times polled
-        self.t_30min_avg = numpy.full(
-            int(30 * 60 / self.interval),
-            numpy.nan,
-            dtype=numpy.float32,
-        )
+        # BaseSensor already started the data log thread, which is not a
+        # daemon and only ends when closed; if anything below fails (e.g.,
+        # the sensor does not answer on the bus) nobody ever gets this object
+        # to call run(), so close the log here or it keeps the process alive.
+        try:
+            self.sensor = adafruit_sht31d.SHT31D(
+                i2c_bus,
+                address=self.ADDRESS,
+            )
+
+            self.nn = 0  # Counter for times polled
+            self.t_30min_avg = numpy.full(
+                int(30 * 60 / self.interval),
+                numpy.nan,
+                dtype=numpy.float32,
+            )
+        except Exception:
+            self.data_log.close()
+            raise
 
     @property
     @locker(I2C_LOCK, default=BUSY)
